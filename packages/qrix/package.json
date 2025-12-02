@@ -1,6 +1,6 @@
 {
   "name": "@zxkit/qrix",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A React library for generating and rendering QR codes",
   "author": "nxtvoid",
   "license": "MIT",
