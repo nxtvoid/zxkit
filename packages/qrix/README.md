@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./github.png" alt="qrix banner" width="100%" />
+  <img src="https://raw.githubusercontent.com/nxtvoid/zxkit/main/packages/qrix/github.png" alt="qrix banner" width="100%" />
 </p>
 
 <h1 align="center">@zxkit/qrix</h1>
