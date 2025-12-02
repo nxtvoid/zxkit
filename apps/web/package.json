@@ -12,6 +12,7 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@vercel/analytics": "^1.6.0",
     "@workspace/ui": "workspace:*",
     "@zxkit/qrix": "workspace:*",
     "lucide-react": "^0.475.0",

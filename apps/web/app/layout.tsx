@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { cn } from '@workspace/ui/lib/utils'
 import { Header } from '@/components/header'
 import { Providers } from '@/components/providers'
+import { Analytics } from '@vercel/analytics/next'
 import { siteConfig } from '@/lib/config'
 import { Geist, Geist_Mono } from 'next/font/google'
 
@@ -92,6 +93,8 @@ export default function RootLayout({
             </div>
           </Providers>
         </main>
+
+        <Analytics />
       </body>
     </html>
   )
