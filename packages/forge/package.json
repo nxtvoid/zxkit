@@ -1,0 +1,70 @@
+{
+  "name": "@zxkit/forge",
+  "version": "1.0.0",
+  "description": "CLI for adding shadcn components to Turborepo monorepos",
+  "author": "nxtvoid",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nxtvoid/zxkit",
+    "directory": "packages/forge"
+  },
+  "homepage": "https://github.com/nxtvoid/zxkit/tree/main/packages/forge",
+  "bugs": {
+    "url": "https://github.com/nxtvoid/zxkit/issues"
+  },
+  "keywords": [
+    "cli",
+    "shadcn",
+    "shadcn-ui",
+    "turborepo",
+    "monorepo",
+    "ui",
+    "components",
+    "react",
+    "nextjs",
+    "tailwindcss"
+  ],
+  "type": "module",
+  "bin": {
+    "forge": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "dev": "tsup --watch",
+    "build": "tsup",
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "cosmiconfig": "^9.0.0",
+    "execa": "^9.5.3",
+    "fs-extra": "^11.3.0",
+    "ora": "^8.2.0",
+    "picocolors": "^1.1.1",
+    "prompts": "^2.4.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.19.9",
+    "@types/prompts": "^2.4.9",
+    "@workspace/eslint-config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
+    "eslint": "^9.32.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
