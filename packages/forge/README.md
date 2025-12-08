@@ -16,7 +16,7 @@
 
 - 🏗️ **Monorepo-first** - Designed specifically for Turborepo monorepos
 - 📦 **Automatic setup** - Creates and configures `packages/ui` structure
-- 🔄 **Registry sync** - Fetches components directly from shadcn registry
+- ✨ **Always up-to-date** - Uses official shadcn CLI under the hood
 - 📝 **Auto exports** - Automatically updates `index.ts` barrel exports
 - 🔗 **Dependency resolution** - Installs component dependencies in the right place
 - 🎨 **Import transformation** - Transforms imports to use your package scope
@@ -58,7 +58,7 @@ This will:
 
 ### Add Components
 
-Add components from the shadcn registry:
+Add components using the official shadcn CLI:
 
 ```bash
 # Add a single component
@@ -70,6 +70,15 @@ bunx --bun @zxkit/forge@latest add button dialog card
 # Overwrite existing components
 bunx --bun @zxkit/forge@latest add button --overwrite
 ```
+
+**How it works:**
+
+1. Runs `bunx --bun shadcn@latest add <component>` in `packages/ui`
+2. Captures and processes the files created by shadcn
+3. Transforms imports from `@/` to your package scope (`@your-scope/ui`)
+4. Updates barrel exports in `index.ts`
+
+This ensures you always get the **latest component versions** directly from shadcn!
 
 Components are installed to `packages/ui/src/components/` with:
 
