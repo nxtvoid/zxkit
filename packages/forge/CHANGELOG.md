@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0
+
+### Minor Changes
+
+- 67d6d9b: **Features:**
+  - Use official `shadcn view` command for always up-to-date components
+  - Auto-resolve component dependencies (`registryDependencies`)
+  - Auto-update CSS variables in `globals.css`
+  - Recursive tsconfig resolution with `moduleResolution` detection
+  - Optimized to check component existence before fetching
+
 ## 1.0.0
 
 ### Major Changes
