@@ -7,7 +7,7 @@ A collection of React components and utilities for building modern web applicati
 | Package                          | Description                     |
 | -------------------------------- | ------------------------------- |
 | [`@zxkit/qrix`](./packages/qrix) | QR code generator for React     |
-| [`@workspace/ui`](./packages/ui) | Shared UI components (internal) |
+| [`@zxkit/ui`](./packages/ui)     | Shared UI components (internal) |
 
 ## Getting Started
 
