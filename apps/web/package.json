@@ -12,8 +12,10 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
     "@vercel/analytics": "^1.6.0",
     "@zxkit/qrix": "workspace:*",
+    "@zxkit/surface": "workspace:*",
     "@zxkit/ui": "workspace:*",
     "lucide-react": "^0.475.0",
     "next": "16.1.6",
@@ -24,7 +26,8 @@
     "react-dom": "^19.2.4",
     "sonner": "^2.0.7",
     "use-debounce": "^10.0.6",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.17",

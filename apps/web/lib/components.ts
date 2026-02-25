@@ -18,6 +18,15 @@ const COMPONENTS_OPTIONS: ComponentOption[] = [
     },
     link: '/qrix',
   },
+  {
+    title: 'surface',
+    description: 'Handle your dialog, sheet and drawer with ease.',
+    image: {
+      light: '/surface-light.png',
+      dark: '/surface-dark.png',
+    },
+    link: '/surface',
+  },
 ]
 
 export { COMPONENTS_OPTIONS, type ComponentOption }
