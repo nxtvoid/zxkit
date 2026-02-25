@@ -1,20 +1,21 @@
 'use client'
 
 import * as React from 'react'
-import { ThemeProvider as NextThemesProvider } from 'next-themes'
-import { Toaster } from '@workspace/ui/components/sonner'
+import { ThemeProvider } from 'next-themes'
+import { Toaster } from '@zxkit/ui/sonner'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <NextThemesProvider
+    <ThemeProvider
       attribute='class'
-      defaultTheme='system'
+      storageKey='zxkit-theme'
       enableSystem
       disableTransitionOnChange
       enableColorScheme
     >
       {children}
+
       <Toaster position='bottom-center' closeButton />
-    </NextThemesProvider>
+    </ThemeProvider>
   )
 }

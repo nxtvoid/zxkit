@@ -1,4 +1,4 @@
-import { cn } from '@workspace/ui/lib/utils'
+import { cn } from '@zxkit/ui/lib/utils'
 
 const LogoAppIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg

@@ -1,22 +1,21 @@
 'use client'
 
-import * as React from 'react'
+import { useCallback, useEffect } from 'react'
+import { Button } from '@zxkit/ui/button'
 import { useTheme } from 'next-themes'
-
-import { useMetaColor } from '@workspace/ui/hooks/use-meta-color'
-import { Button } from '@workspace/ui/components/button'
+import { useMetaColor } from '@zxkit/ui/hooks/use-meta-color'
 
 export function ModeSwitcher() {
-  const { setTheme, resolvedTheme } = useTheme()
+  const { setTheme, resolvedTheme, theme } = useTheme()
   const { setMetaColor, metaColor } = useMetaColor()
 
-  React.useEffect(() => {
+  useEffect(() => {
     setMetaColor(metaColor)
   }, [metaColor, setMetaColor])
 
-  const toggleTheme = React.useCallback(() => {
-    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
-  }, [resolvedTheme, setTheme])
+  const toggleTheme = useCallback(() => {
+    setTheme((resolvedTheme || theme) === 'dark' ? 'light' : 'dark')
+  }, [resolvedTheme, theme, setTheme])
 
   return (
     <Button

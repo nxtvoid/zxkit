@@ -1,2 +1,2 @@
 declare module '*.css'
-declare module '@workspace/ui/globals.css'
+declare module '@zxkit/ui/globals.css'

@@ -1,4 +1,4 @@
-import { Button } from '@workspace/ui/components/button'
+import { Button } from '@zxkit/ui/button'
 import { COMPONENTS_OPTIONS } from '@/lib/components'
 import { SquareArrowOutUpRightIcon } from 'lucide-react'
 import {
@@ -8,7 +8,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@workspace/ui/components/card'
+} from '@zxkit/ui/card'
 import Link from 'next/link'
 import Image from 'next/image'
 

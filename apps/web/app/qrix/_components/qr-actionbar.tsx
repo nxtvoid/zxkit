@@ -1,5 +1,5 @@
 import { toast } from 'sonner'
-import { Button } from '@workspace/ui/components/button'
+import { Button } from '@zxkit/ui/button'
 import { CopyIcon, DownloadCloudIcon, FileCodeIcon, ImageIcon, RotateCwIcon } from 'lucide-react'
 import {
   copyQRCodeToClipboard,
@@ -12,7 +12,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@workspace/ui/components/dropdown-menu'
+} from '@zxkit/ui/dropdown-menu'
 
 type QrActionBarProps = {
   qrData: QRCodeSVGProps

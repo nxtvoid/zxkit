@@ -1,12 +1,12 @@
+import '@zxkit/ui/globals.css'
+
 import type { Metadata } from 'next'
-import { cn } from '@workspace/ui/lib/utils'
+import { cn } from '@zxkit/ui/lib/utils'
 import { Header } from '@/components/header'
 import { Providers } from '@/components/providers'
 import { Analytics } from '@vercel/analytics/next'
 import { siteConfig } from '@/lib/config'
 import { Geist, Geist_Mono } from 'next/font/google'
-
-import '@workspace/ui/globals.css'
 
 const fontSans = Geist({
   subsets: ['latin'],
@@ -85,15 +85,14 @@ export default function RootLayout({
       <body
         className={cn('min-h-screen font-sans antialiased', fontSans.variable, fontMono.variable)}
       >
-        <main className='flex min-h-screen flex-col'>
-          <Providers>
+        <Providers>
+          <main className='flex min-h-screen flex-col'>
             <Header />
             <div className='relative mx-auto flex w-full max-w-7xl flex-1 flex-col p-6'>
               {children}
             </div>
-          </Providers>
-        </main>
-
+          </main>
+        </Providers>
         <Analytics />
       </body>
     </html>

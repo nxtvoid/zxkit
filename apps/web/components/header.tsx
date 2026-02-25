@@ -1,6 +1,6 @@
-import { Button } from '@workspace/ui/components/button'
-import { GithubIcon, LogoAppIcon } from '@workspace/ui/components/icons'
-import { ModeSwitcher } from '@workspace/ui/components/mode-switcher'
+import { Button } from '@zxkit/ui/button'
+import { GithubIcon, LogoAppIcon } from '@zxkit/ui/icons'
+import { ModeSwitcher } from '@zxkit/ui/mode-switcher'
 import Link from 'next/link'
 
 const Header = () => {
