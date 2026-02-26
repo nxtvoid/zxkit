@@ -4,10 +4,11 @@ A collection of React components and utilities for building modern web applicati
 
 ## Packages
 
-| Package                          | Description                     |
-| -------------------------------- | ------------------------------- |
-| [`@zxkit/qrix`](./packages/qrix) | QR code generator for React     |
-| [`@zxkit/ui`](./packages/ui)     | Shared UI components (internal) |
+| Package                                | Description                                    |
+| -------------------------------------- | ---------------------------------------------- |
+| [`@zxkit/qrix`](./packages/qrix)       | QR code generator for React                    |
+| [`@zxkit/surface`](./packages/surface) | Handle yout dialog, sheet and drawer with ease |
+| [`@zxkit/ui`](./packages/ui)           | Shared UI components (internal)                |
 
 ## Getting Started
 
