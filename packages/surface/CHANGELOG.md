@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2 - 2026-02-27
+
+### Minor Changes
+
+- **fix: resolve TS2742 portability errors in declaration emit**
+
 ## 1.0.1 - 2026-02-27
 
 ### Minor Changes

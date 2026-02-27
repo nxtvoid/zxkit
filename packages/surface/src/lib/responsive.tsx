@@ -33,6 +33,18 @@ type Options = {
   breakpoint?: number
 }
 
+// Portable wrapper interfaces — defined in THIS package so TypeScript can
+// reference them as '@zxkit/surface'.PreservedFormOptions etc. in declaration
+// emit, instead of needing to resolve react-hook-form through bun's internal paths.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface PreservedFormOptions<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> extends UseFormProps<T> {}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface PreservedFormReturn<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> extends UseFormReturn<T> {}
+
 export interface ResponsiveWrapperReturn {
   Wrapper: React.ComponentType<WrapperProps>
   Content: React.ComponentType<ContentProps>
@@ -40,10 +52,10 @@ export interface ResponsiveWrapperReturn {
     key: string,
     initialValue: T
   ) => [T, React.Dispatch<React.SetStateAction<T>>]
-  usePreservedForm: <T extends FieldValues>(
+  usePreservedForm: <T extends Record<string, unknown>>(
     key: string,
-    options: UseFormProps<T>
-  ) => UseFormReturn<T>
+    options: PreservedFormOptions<T>
+  ) => PreservedFormReturn<T>
 }
 
 export function createResponsiveWrapper({
@@ -117,10 +129,10 @@ export function createResponsiveWrapper({
   }
 
   // Hook to preserve state across unmounts. State is stored in the StateStoreContext and keyed by the provided key.
-  function usePreservedState<T>(
+  const usePreservedState: <T>(
     key: string,
     initialValue: T
-  ): [T, React.Dispatch<React.SetStateAction<T>>] {
+  ) => [T, React.Dispatch<React.SetStateAction<T>>] = <T,>(key: string, initialValue: T) => {
     const store = useContext(StateStoreContext)
 
     const [state, setState] = useState<T>(() => {
@@ -138,10 +150,10 @@ export function createResponsiveWrapper({
   }
 
   // Hook to create a react-hook-form form with preserved state. Form state is stored in the StateStoreContext and keyed by the provided key.
-  const usePreservedForm: <T extends FieldValues>(
+  const usePreservedForm: <T extends Record<string, unknown>>(
     key: string,
-    options: UseFormProps<T>
-  ) => UseFormReturn<T> = <T extends FieldValues>(key: string, options: UseFormProps<T>) => {
+    options: PreservedFormOptions<T>
+  ) => PreservedFormReturn<T> = <T extends FieldValues>(key: string, options: UseFormProps<T>) => {
     const store = useContext(StateStoreContext)
     const hasStoredValues = store.has(key)
 
