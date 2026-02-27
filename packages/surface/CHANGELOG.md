@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 - 2026-02-27
+
+### Minor Changes
+
+- fix type error in usePreservedForm
+
 ## [1.0.0] - 2026-02-25
 
 ### Added

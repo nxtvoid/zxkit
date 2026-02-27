@@ -138,10 +138,10 @@ export function createResponsiveWrapper({
   }
 
   // Hook to create a react-hook-form form with preserved state. Form state is stored in the StateStoreContext and keyed by the provided key.
-  function usePreservedForm<T extends FieldValues>(
+  const usePreservedForm: <T extends FieldValues>(
     key: string,
     options: UseFormProps<T>
-  ): UseFormReturn<T> {
+  ) => UseFormReturn<T> = <T extends FieldValues>(key: string, options: UseFormProps<T>) => {
     const store = useContext(StateStoreContext)
     const hasStoredValues = store.has(key)
 
