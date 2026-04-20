@@ -1,7 +1,7 @@
 'use client'
 
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   generateQRCodeSVG,
   downloadQRCodePNG,
@@ -57,14 +57,17 @@ export function QRCodeSVG({
 }: QRCodeSVGProps) {
   const [svgContent, setSvgContent] = useState<string | null>(null)
   const [error, setError] = useState<boolean>(false)
+  const requestIdRef = useRef(0)
 
   useEffect(() => {
     if (!value) {
       setSvgContent(null)
+      setError(false)
       return
     }
 
     let cancelled = false
+    const requestId = ++requestIdRef.current
 
     generateQRCodeSVG({
       value,
@@ -79,7 +82,7 @@ export function QRCodeSVG({
       quietZone,
     })
       .then((svg) => {
-        if (!cancelled) {
+        if (!cancelled && requestId === requestIdRef.current) {
           setSvgContent(svg)
           setError(false)
         }
@@ -87,7 +90,7 @@ export function QRCodeSVG({
       .catch((err) => {
         console.error('QR Code generation error:', err)
 
-        if (!cancelled) {
+        if (!cancelled && requestId === requestIdRef.current) {
           setError(true)
           setSvgContent(null)
         }

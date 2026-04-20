@@ -1,6 +1,7 @@
 import resolve from '@rollup/plugin-node-resolve'
 import commonjs from '@rollup/plugin-commonjs'
 import typescript from '@rollup/plugin-typescript'
+import terser from '@rollup/plugin-terser'
 import peerDepsExternal from 'rollup-plugin-peer-deps-external'
 import preserveDirectives from 'rollup-preserve-directives'
 import { dts } from 'rollup-plugin-dts'
@@ -15,14 +16,12 @@ const mainConfig = {
       format: 'cjs',
       interop: 'compat',
       exports: 'named',
-      sourcemap: true,
       inlineDynamicImports: true,
     },
     {
       file: './dist/index.js',
       format: 'esm',
       exports: 'named',
-      sourcemap: true,
       inlineDynamicImports: true,
     },
   ],
@@ -37,6 +36,7 @@ const mainConfig = {
       tsconfig: './tsconfig.build.json',
     }),
     preserveDirectives(),
+    !isWatch && terser(),
   ],
   external: ['react', 'react/jsx-runtime'],
 }

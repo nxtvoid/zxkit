@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+
+### Patch Changes
+
+- Improve QR code SVG safety, input sanitization, and package build output.
+
 ## 1.0.1
 
 ### Patch Changes

@@ -26,6 +26,87 @@ interface QRMatrix {
   size: number
 }
 
+interface SanitizedQRCodeOptions {
+  value: string
+  size: number
+  fgColor: string
+  bgColor: string
+  logoUrl?: string
+  logoSize: number
+  logoPadding: number
+  logoBackgroundColor: string
+  errorCorrectionLevel: ErrorCorrectionLevel
+  quietZone: number
+}
+
+function escapeXmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function encodeToBase64(value: string): string {
+  const bytes = new TextEncoder().encode(value)
+  let binary = ''
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+
+  return btoa(binary)
+}
+
+function createSvgDataUrl(svg: string): string {
+  return `data:image/svg+xml;base64,${encodeToBase64(svg)}`
+}
+
+function sanitizeNumber(
+  value: number | undefined,
+  fallback: number,
+  options: {
+    min?: number
+    max?: number
+    integer?: boolean
+  } = {}
+): number {
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
+    return fallback
+  }
+
+  let nextValue = value
+
+  if (options.integer) {
+    nextValue = Math.floor(nextValue)
+  }
+
+  if (options.min !== undefined) {
+    nextValue = Math.max(options.min, nextValue)
+  }
+
+  if (options.max !== undefined) {
+    nextValue = Math.min(options.max, nextValue)
+  }
+
+  return nextValue
+}
+
+function sanitizeOptions(options: QRCodeOptions): SanitizedQRCodeOptions {
+  return {
+    value: options.value,
+    size: sanitizeNumber(options.size, 256, { min: 1, integer: true }),
+    fgColor: options.fgColor ?? '#000000',
+    bgColor: options.bgColor ?? '#FFFFFF',
+    logoUrl: options.logoUrl,
+    logoSize: sanitizeNumber(options.logoSize, 20, { min: 0, max: 100 }),
+    logoPadding: sanitizeNumber(options.logoPadding, 4, { min: 0 }),
+    logoBackgroundColor: options.logoBackgroundColor ?? '#FFFFFF',
+    errorCorrectionLevel: options.errorCorrectionLevel ?? 'H',
+    quietZone: sanitizeNumber(options.quietZone, 4, { min: 0, integer: true }),
+  }
+}
+
 /**
  * Generate QR code matrix using qrcode library
  */
@@ -57,16 +138,16 @@ async function generateMatrix(
 export async function generateQRCodeSVG(options: QRCodeOptions): Promise<string> {
   const {
     value,
-    size = 256,
-    fgColor = '#000000',
-    bgColor = '#FFFFFF',
+    size,
+    fgColor,
+    bgColor,
     logoUrl,
-    logoSize = 20,
-    logoPadding = 4,
-    logoBackgroundColor = '#FFFFFF',
-    errorCorrectionLevel = 'H',
-    quietZone = 4,
-  } = options
+    logoSize,
+    logoPadding,
+    logoBackgroundColor,
+    errorCorrectionLevel,
+    quietZone,
+  } = sanitizeOptions(options)
 
   const matrix = await generateMatrix(value, errorCorrectionLevel)
   const moduleCount = matrix.size
@@ -85,11 +166,15 @@ export async function generateQRCodeSVG(options: QRCodeOptions): Promise<string>
   // Convert pixel positions to module indices
   const logoModuleStart = Math.floor((logoAreaStart / size) * totalSize) - quietZone
   const logoModuleEnd = Math.ceil((logoAreaEnd / size) * totalSize) - quietZone
+  const safeFgColor = escapeXmlAttribute(fgColor)
+  const safeBgColor = escapeXmlAttribute(bgColor)
+  const safeLogoBackgroundColor = escapeXmlAttribute(logoBackgroundColor)
+  const safeLogoUrl = logoUrl ? escapeXmlAttribute(logoUrl) : null
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">`
 
   // Background
-  svg += `<rect width="${size}" height="${size}" fill="${bgColor}"/>`
+  svg += `<rect width="${size}" height="${size}" fill="${safeBgColor}"/>`
 
   // Build a single path for all modules (optimized SVG)
   let pathData = ''
@@ -120,19 +205,19 @@ export async function generateQRCodeSVG(options: QRCodeOptions): Promise<string>
 
   // Single path element for all modules
   if (pathData) {
-    svg += `<path d="${pathData}" fill="${fgColor}"/>`
+    svg += `<path d="${pathData}" fill="${safeFgColor}"/>`
   }
 
   // Add logo if provided
-  if (logoUrl) {
+  if (safeLogoUrl) {
     const logoX = (size - logoPixelSize) / 2
     const logoY = (size - logoPixelSize) / 2
 
     // Logo background
-    svg += `<rect x="${logoX - logoPadding}" y="${logoY - logoPadding}" width="${logoPixelSize + logoPadding * 2}" height="${logoPixelSize + logoPadding * 2}" fill="${logoBackgroundColor}" rx="4"/>`
+    svg += `<rect x="${logoX - logoPadding}" y="${logoY - logoPadding}" width="${logoPixelSize + logoPadding * 2}" height="${logoPixelSize + logoPadding * 2}" fill="${safeLogoBackgroundColor}" rx="4"/>`
 
     // Logo image
-    svg += `<image x="${logoX}" y="${logoY}" width="${logoPixelSize}" height="${logoPixelSize}" href="${logoUrl}" preserveAspectRatio="xMidYMid slice"/>`
+    svg += `<image x="${logoX}" y="${logoY}" width="${logoPixelSize}" height="${logoPixelSize}" href="${safeLogoUrl}" preserveAspectRatio="xMidYMid slice"/>`
   }
 
   svg += '</svg>'
@@ -145,15 +230,30 @@ export async function generateQRCodeSVG(options: QRCodeOptions): Promise<string>
 async function imageToBase64(url: string): Promise<string> {
   try {
     const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch logo: ${response.status}`)
+    }
+
+    const contentType = response.headers.get('content-type')
+    if (contentType && !contentType.startsWith('image/')) {
+      throw new Error(`Invalid logo content type: ${contentType}`)
+    }
+
     const blob = await response.blob()
+
+    if (!blob.type.startsWith('image/')) {
+      throw new Error(`Invalid logo blob type: ${blob.type || 'unknown'}`)
+    }
+
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onloadend = () => resolve(reader.result as string)
       reader.onerror = reject
       reader.readAsDataURL(blob)
     })
-  } catch {
-    return url
+  } catch (error) {
+    console.warn('Failed to convert logo to base64, exporting QR without logo.', error)
+    return ''
   }
 }
 
@@ -163,7 +263,10 @@ async function imageToBase64(url: string): Promise<string> {
 export async function generateQRCodeSVGForExport(options: QRCodeOptions): Promise<string> {
   if (options.logoUrl) {
     const base64Logo = await imageToBase64(options.logoUrl)
-    return generateQRCodeSVG({ ...options, logoUrl: base64Logo })
+    return generateQRCodeSVG({
+      ...options,
+      logoUrl: base64Logo || undefined,
+    })
   }
   return generateQRCodeSVG(options)
 }
@@ -173,7 +276,7 @@ export async function generateQRCodeSVGForExport(options: QRCodeOptions): Promis
  */
 export async function generateQRCodeDataURL(options: QRCodeOptions): Promise<string> {
   const svg = await generateQRCodeSVGForExport(options)
-  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
+  return createSvgDataUrl(svg)
 }
 
 /**
@@ -184,7 +287,8 @@ export async function downloadQRCodePNG(
   filename = 'qrcode.png',
   scale = 4
 ): Promise<void> {
-  const exportSize = (options.size || 256) * scale
+  const safeScale = sanitizeNumber(scale, 4, { min: 1, integer: true })
+  const exportSize = sanitizeOptions(options).size * safeScale
   const svg = await generateQRCodeSVGForExport({
     ...options,
     size: exportSize,
@@ -217,7 +321,7 @@ export async function downloadQRCodePNG(
       }, 'image/png')
     }
     img.onerror = () => reject(new Error('Failed to load SVG'))
-    img.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
+    img.src = createSvgDataUrl(svg)
   })
 }
 
@@ -242,7 +346,8 @@ export async function downloadQRCodeSVG(
  * Copy QR code to clipboard
  */
 export async function copyQRCodeToClipboard(options: QRCodeOptions, scale = 4): Promise<void> {
-  const exportSize = (options.size || 256) * scale
+  const safeScale = sanitizeNumber(scale, 4, { min: 1, integer: true })
+  const exportSize = sanitizeOptions(options).size * safeScale
   const svg = await generateQRCodeSVGForExport({
     ...options,
     size: exportSize,
@@ -274,6 +379,6 @@ export async function copyQRCodeToClipboard(options: QRCodeOptions, scale = 4): 
       }, 'image/png')
     }
     img.onerror = () => reject(new Error('Failed to load SVG'))
-    img.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
+    img.src = createSvgDataUrl(svg)
   })
 }
