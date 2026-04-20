@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3
+
+### Patch Changes
+
+- Fix modal stack closing for multiple instances of the same modal and clean published package output.
+
 ## 1.0.2 - 2026-02-27
 
 ### Minor Changes

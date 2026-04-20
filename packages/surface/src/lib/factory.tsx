@@ -34,7 +34,7 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
       name: ModalKeys
       props: Record<string, unknown>
     }
-    pop: { name?: ModalKeys }
+    pop: { key?: string; name?: ModalKeys }
     popAll: undefined
   }
 
@@ -117,14 +117,15 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
         })
       }
 
-      const popHandler: Handler<EventHandlers['pop']> = ({ name }) => {
+      const popHandler: Handler<EventHandlers['pop']> = ({ key, name }) => {
         setState((items) => {
-          // Find last open item index
           const index =
-            name === undefined
-              ? // Pick last open item if no name is provided
-                items.findLastIndex((item) => item.open)
-              : items.findLastIndex((item) => item.name === name && item.open)
+            key !== undefined
+              ? items.findIndex((item) => item.key === key)
+              : name === undefined
+                ? // Pick last open item if no name is provided
+                  items.findLastIndex((item) => item.open)
+                : items.findLastIndex((item) => item.name === name && item.open)
           const match = items[index]
           if (match) {
             emitter.emit('change', {
@@ -178,7 +179,7 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
               open={item.open}
               onOpenChange={(isOpen) => {
                 if (!isOpen) {
-                  popModal(item.name)
+                  popModalByKey(item.key)
                 }
               }}
             >
@@ -223,6 +224,11 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
   const popModal = (name?: StateItem['name']) =>
     emitter.emit('pop', {
       name,
+    })
+
+  const popModalByKey = (key: string) =>
+    emitter.emit('pop', {
+      key,
     })
 
   const replaceWithModal = <T extends StateItem['name'], B extends GetComponentProps<Modals[T]>>(
