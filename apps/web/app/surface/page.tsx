@@ -6,6 +6,8 @@ import { CardStateExample } from './_components/card-state'
 import { CardSheetExample } from './_components/sheet-default'
 import { CardDynamicExample } from './_components/card-dynamic'
 import { CardDefaultExample } from './_components/card-default'
+import { CardAsyncExample } from './_components/card-async'
+import { CardReplaceExample } from './_components/card-replace'
 import { SurfaceExampleCode } from '@/components/surface/example-code'
 import { ArrowRightIcon, MonitorPlayIcon, SmartphoneIcon } from 'lucide-react'
 
@@ -74,6 +76,10 @@ export default function Page() {
           <CardSheetExample />
 
           <CardDynamicExample />
+
+          <CardAsyncExample />
+
+          <CardReplaceExample />
 
           <CardStateExample />
 

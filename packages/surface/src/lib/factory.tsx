@@ -4,33 +4,102 @@ import React, { Suspense, useEffect, useState } from 'react'
 import mitt, { Handler } from 'mitt'
 import { Dialog } from 'radix-ui'
 
-interface CreatePushModalOptions<T> {
-  modals: {
-    [key in keyof T]:
-      | {
-          Wrapper: React.ComponentType<{
-            open?: boolean
-            onOpenChange?: (open: boolean) => void
-            children?: React.ReactNode
-            defaultOpen?: boolean
-          }>
-          Component: React.ComponentType<T[key]>
-        }
-      | React.ComponentType<T[key]>
-  }
+type ModalName = string | number | symbol
+type ModalWrapperProps = {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  children?: React.ReactNode
+  defaultOpen?: boolean
 }
 
-export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
-  type Modals = typeof modals
+export type ModalDefinition<Props, Result = unknown> =
+  | (React.ComponentType<Props> & { __modalResult?: Result })
+  | ({
+      Wrapper: React.ComponentType<ModalWrapperProps>
+      Component: React.ComponentType<Props>
+    } & { __modalResult?: Result })
+
+type ExtractModalProps<T> =
+  T extends React.ComponentType<infer P>
+    ? P
+    : T extends { Component: React.ComponentType<infer P> }
+      ? P
+      : never
+
+type ExtractModalResult<T> = T extends { __modalResult?: infer R } ? R : unknown
+type Prettify<T> = {
+  [K in keyof T]: T[K]
+} & Record<never, never>
+type ModalArgs<T> = keyof Prettify<ExtractModalProps<T>> extends never
+  ? []
+  : [props: Prettify<ExtractModalProps<T>>]
+// `React.ComponentType` is invariant in its props, so the modal registry constraint
+// needs a permissive placeholder type to preserve inference for each concrete modal entry.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ModalRegistry = Record<string, ModalDefinition<any, any>>
+type ModalInvocation<TModals extends ModalRegistry, TName extends keyof TModals> = [
+  name: TName,
+  ...args: ModalArgs<TModals[TName]>,
+]
+
+export type ModalHandle<TModals extends ModalRegistry> = {
+  key: string
+  close: () => void
+  replace: <TName extends keyof TModals>(
+    ...invocation: ModalInvocation<TModals, TName>
+  ) => ModalHandle<TModals>
+}
+
+export function modal<Props, Result = unknown>(
+  definition: ModalDefinition<Props, Result>
+): ModalDefinition<Props, Result> {
+  return definition
+}
+
+interface ModalControlsContextValue<TResult = unknown> {
+  key: string
+  name: ModalName
+  close: () => void
+  resolve: (value?: TResult) => void
+  reject: (reason?: unknown) => void
+  replace: <TName extends ModalName>(name: TName, props?: Record<string, unknown>) => void
+}
+
+const ModalControlsContext = React.createContext<ModalControlsContextValue | null>(null)
+
+export function useModalControls<TResult = unknown>() {
+  const context = React.useContext(ModalControlsContext)
+
+  if (!context) {
+    throw new Error('useModalControls must be used within a modal created by createPushModal')
+  }
+
+  return context as ModalControlsContextValue<TResult>
+}
+
+interface CreatePushModalOptions<TModals extends ModalRegistry> {
+  modals: TModals
+}
+
+export function createPushModal<TModals extends ModalRegistry>({
+  modals,
+}: CreatePushModalOptions<TModals>) {
+  type Modals = TModals
   type ModalKeys = keyof Modals
+  interface AsyncResolution {
+    resolve: (value: unknown) => void
+    reject: (reason?: unknown) => void
+  }
 
   type EventHandlers = {
     change: { name: ModalKeys; open: boolean; props: Record<string, unknown> }
     push: {
+      key?: string
       name: ModalKeys
       props: Record<string, unknown>
     }
     replace: {
+      key?: string
       name: ModalKeys
       props: Record<string, unknown>
     }
@@ -54,6 +123,64 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
   }
 
   const emitter = mitt<EventHandlers>()
+  const asyncResolutions = new Map<string, AsyncResolution>()
+  let modalKeyCounter = 0
+
+  const createModalKey = () => `modal-${++modalKeyCounter}`
+
+  const createStateItem = (
+    name: ModalKeys,
+    props: Record<string, unknown>,
+    key = createModalKey()
+  ): StateItem => ({
+    key,
+    name,
+    props,
+    open: true,
+  })
+
+  const resolveAsyncModal = (key: string, value: unknown) => {
+    const resolution = asyncResolutions.get(key)
+    if (!resolution) return
+
+    asyncResolutions.delete(key)
+    resolution.resolve(value)
+  }
+
+  const rejectAsyncModal = (key: string, reason?: unknown) => {
+    const resolution = asyncResolutions.get(key)
+    if (!resolution) return
+
+    asyncResolutions.delete(key)
+    resolution.reject(reason)
+  }
+
+  const popModalByKey = (key: string) =>
+    emitter.emit('pop', {
+      key,
+    })
+
+  const closeModalByKey = (key: string) => {
+    resolveAsyncModal(key, undefined)
+    popModalByKey(key)
+  }
+
+  const resolveModalByKey = (key: string, value: unknown) => {
+    resolveAsyncModal(key, value)
+    popModalByKey(key)
+  }
+
+  const rejectModalByKey = (key: string, reason?: unknown) => {
+    rejectAsyncModal(key, reason)
+    popModalByKey(key)
+  }
+
+  const replaceModalByKey = (key: string, name: ModalKeys, props: Record<string, unknown>) =>
+    emitter.emit('replace', {
+      key,
+      name,
+      props,
+    })
 
   function ModalProvider() {
     const [state, setState] = useState<StateItem[]>([])
@@ -73,47 +200,37 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
     }, [state])
 
     useEffect(() => {
-      const pushHandler: Handler<EventHandlers['push']> = ({ name, props }) => {
+      const pushHandler: Handler<EventHandlers['push']> = ({ key, name, props }) => {
         emitter.emit('change', { name, open: true, props })
-        setState((p) =>
-          [
-            ...p,
-            {
-              key: Math.random().toString(),
-              name,
-              props,
-              open: true,
-            },
-          ].filter(filterGarbage)
-        )
+        setState((p) => [...p, createStateItem(name, props, key)].filter(filterGarbage))
       }
-      const replaceHandler: Handler<EventHandlers['replace']> = ({ name, props }) => {
+      const replaceHandler: Handler<EventHandlers['replace']> = ({ key, name, props }) => {
         setState((p) => {
-          // find last item to replace
-          const last = p.findLast((item) => item.open)
-          if (last) {
-            // if found emit close event
-            emitter.emit('change', { name: last.name, open: false, props: last.props })
+          const last =
+            key !== undefined
+              ? p.find((item) => item.key === key && item.open)
+              : p.findLast((item) => item.open)
+
+          if (!last) {
+            emitter.emit('change', { name, open: true, props })
+            return [...p, createStateItem(name, props)].filter(filterGarbage)
           }
+
+          emitter.emit('change', { name: last.name, open: false, props: last.props })
+          resolveAsyncModal(last.key, undefined)
           emitter.emit('change', { name, open: true, props })
 
-          return [
-            // 1) close last item 2) filter garbage 3) add new item
-            ...p
-              .map((item) => {
-                if (item.key === last?.key) {
-                  return { ...item, open: false, closedAt: Date.now() }
+          return p.map((item) =>
+            item.key === last.key
+              ? {
+                  ...item,
+                  name,
+                  props,
+                  open: true,
+                  closedAt: undefined,
                 }
-                return item
-              })
-              .filter(filterGarbage),
-            {
-              key: Math.random().toString(),
-              name,
-              props,
-              open: true,
-            },
-          ]
+              : item
+          )
         })
       }
 
@@ -128,6 +245,7 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
                 : items.findLastIndex((item) => item.name === name && item.open)
           const match = items[index]
           if (match) {
+            resolveAsyncModal(match.key, undefined)
             emitter.emit('change', {
               name: match.name,
               open: false,
@@ -144,6 +262,7 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
         setState((items) => {
           items.forEach((item) => {
             if (item.open) {
+              resolveAsyncModal(item.key, undefined)
               emitter.emit('change', { name: item.name, open: false, props: item.props })
             }
           })
@@ -167,7 +286,7 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
     return (
       <>
         {state.map((item) => {
-          const modal = modals[item.name]
+          const modal = modals[item.name]!
           const Component = ('Component' in modal ? modal.Component : modal) as React.ComponentType<
             Record<string, unknown>
           >
@@ -179,13 +298,25 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
               open={item.open}
               onOpenChange={(isOpen) => {
                 if (!isOpen) {
-                  popModalByKey(item.key)
+                  closeModalByKey(item.key)
                 }
               }}
             >
-              <Suspense>
-                <Component {...item.props} />
-              </Suspense>
+              <ModalControlsContext.Provider
+                value={{
+                  key: item.key,
+                  name: item.name,
+                  close: () => closeModalByKey(item.key),
+                  resolve: (value) => resolveModalByKey(item.key, value),
+                  reject: (reason) => rejectModalByKey(item.key, reason),
+                  replace: (name, props = {}) =>
+                    replaceModalByKey(item.key, name as ModalKeys, props),
+                }}
+              >
+                <Suspense>
+                  <Component {...item.props} />
+                </Suspense>
+              </ModalControlsContext.Provider>
             </Root>
           )
         })}
@@ -193,32 +324,31 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
     )
   }
 
-  type Prettify<T> = {
-    [K in keyof T]: T[K]
-  } & Record<never, never>
-  type GetComponentProps<T> = T extends
-    | React.ComponentType<infer P>
-    | React.Component<infer P>
-    | { Component: React.ComponentType<infer P> }
-    ? P
-    : never
-  type IsObject<T> =
-    Prettify<T> extends Record<string | number | symbol, unknown> ? Prettify<T> : never
-  type HasKeys<T> = keyof T extends never ? never : T
+  type ModalInvocationFor<T extends ModalKeys> = ModalInvocation<Modals, T>
 
-  const pushModal = <T extends StateItem['name'], B extends Prettify<GetComponentProps<Modals[T]>>>(
-    name: T,
-    ...args: HasKeys<IsObject<B>> extends never
-      ? // No props provided
-        []
-      : // Props provided
-        [props: B]
-  ) => {
+  const createModalHandle = (key: string): ModalHandle<Modals> => ({
+    key,
+    close: () => closeModalByKey(key),
+    replace: (...invocation) => {
+      const [name, ...args] = invocation
+      const [props] = args
+      replaceModalByKey(key, name, props ?? {})
+      return createModalHandle(key)
+    },
+  })
+
+  const pushModal = <T extends StateItem['name']>(...invocation: ModalInvocationFor<T>) => {
+    const [name, ...args] = invocation
     const [props] = args
-    return emitter.emit('push', {
+    const key = createModalKey()
+
+    emitter.emit('push', {
+      key,
       name,
       props: props ?? {},
     })
+
+    return createModalHandle(key)
   }
 
   const popModal = (name?: StateItem['name']) =>
@@ -226,19 +356,8 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
       name,
     })
 
-  const popModalByKey = (key: string) =>
-    emitter.emit('pop', {
-      key,
-    })
-
-  const replaceWithModal = <T extends StateItem['name'], B extends GetComponentProps<Modals[T]>>(
-    name: T,
-    ...args: HasKeys<IsObject<B>> extends never
-      ? // No props provided
-        []
-      : // Props provided
-        [props: B]
-  ) => {
+  const replaceWithModal = <T extends StateItem['name']>(...invocation: ModalInvocationFor<T>) => {
+    const [name, ...args] = invocation
     const [props] = args
     emitter.emit('replace', {
       name,
@@ -246,24 +365,46 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
     })
   }
 
+  function pushModalAsync<T extends StateItem['name']>(
+    ...invocation: ModalInvocationFor<T>
+  ): Promise<ExtractModalResult<Modals[T]> | undefined>
+  function pushModalAsync<T extends StateItem['name']>(...invocation: ModalInvocationFor<T>) {
+    const [name, ...args] = invocation
+    const [props] = args
+    const key = createModalKey()
+
+    return new Promise<unknown | undefined>((resolve, reject) => {
+      asyncResolutions.set(key, {
+        resolve,
+        reject,
+      })
+
+      emitter.emit('push', {
+        key,
+        name,
+        props: props ?? {},
+      })
+    })
+  }
+
   const popAllModals = () => emitter.emit('popAll')
 
   type EventCallback<T extends ModalKeys> = (
     open: boolean,
-    props: GetComponentProps<Modals[T]>,
+    props: ExtractModalProps<Modals[T]>,
     name?: T
   ) => void
 
-  type CloseCallback<T extends ModalKeys> = (props: GetComponentProps<Modals[T]>, name?: T) => void
+  type CloseCallback<T extends ModalKeys> = (props: ExtractModalProps<Modals[T]>, name?: T) => void
 
   const onPushModal = <T extends ModalKeys>(name: T | '*', callback: EventCallback<T>) => {
     const fn: Handler<EventHandlers['change']> = (payload) => {
       if (payload.name === name) {
-        callback(payload.open, payload.props as GetComponentProps<Modals[T]>, payload.name as T)
+        callback(payload.open, payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
       } else if (name === '*') {
         callback(
           payload.open,
-          payload.props as unknown as GetComponentProps<Modals[T]>,
+          payload.props as unknown as ExtractModalProps<Modals[T]>,
           payload.name as T
         )
       }
@@ -284,18 +425,18 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
         if (payload.name === name) {
           if (delay > 0) {
             setTimeout(() => {
-              callback(payload.props as GetComponentProps<Modals[T]>, payload.name as T)
+              callback(payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
             }, delay)
           } else {
-            callback(payload.props as GetComponentProps<Modals[T]>, payload.name as T)
+            callback(payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
           }
         } else if (name === '*') {
           if (delay > 0) {
             setTimeout(() => {
-              callback(payload.props as GetComponentProps<Modals[T]>, payload.name as T)
+              callback(payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
             }, delay)
           } else {
-            callback(payload.props as GetComponentProps<Modals[T]>, payload.name as T)
+            callback(payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
           }
         }
       }
@@ -308,6 +449,7 @@ export function createPushModal<T>({ modals }: CreatePushModalOptions<T>) {
   return {
     ModalProvider,
     pushModal,
+    pushModalAsync,
     popModal,
     popAllModals,
     replaceWithModal,

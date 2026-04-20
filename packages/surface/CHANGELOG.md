@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.1
+
+### Patch Changes
+
+- Refine the typed modal API with better modal registry inference and safer instance handles for async and replace flows.
+
+## 1.1.0
+
+### Minor Changes
+
+- Add typed modal definitions with `modal(...)`, async modal results with `pushModalAsync`, instance controls through `useModalControls`, and smoother instance-based modal replacement flows.
+
 ## 1.0.3
 
 ### Patch Changes
