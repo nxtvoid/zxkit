@@ -1,0 +1,1 @@
+export { prismaAuthzAdapter } from './prisma'
