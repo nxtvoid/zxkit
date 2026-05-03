@@ -38,7 +38,14 @@ jobs:
       - name: Install dependencies
         run: bun ci
 
+      - name: Detect publishable package changes
+        id: changeset-check
+        run: node .github/scripts/needs-changeset.mjs
+        env:
+          BASE_REF: ${{ github.base_ref }}
+
       - name: Check changesets
+        if: steps.changeset-check.outputs.needs_changeset == 'true'
         run: bunx changeset status --since=origin/${{ github.base_ref }}
 
       - name: Check types
