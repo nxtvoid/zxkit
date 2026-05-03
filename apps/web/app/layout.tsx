@@ -18,12 +18,14 @@ const fontMono = Geist_Mono({
   variable: '--font-mono',
 })
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? siteConfig.url
+
 export const metadata: Metadata = {
   title: {
     default: siteConfig.name,
     template: `%s - ${siteConfig.name}`,
   },
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL!),
+  metadataBase: new URL(appUrl),
   description: siteConfig.description,
   keywords: [
     'zxkit',
@@ -48,13 +50,13 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: process.env.NEXT_PUBLIC_APP_URL!,
+    url: appUrl,
     title: siteConfig.name,
     description: siteConfig.description,
     siteName: siteConfig.name,
     images: [
       {
-        url: `${process.env.NEXT_PUBLIC_APP_URL}/og.png`,
+        url: `${appUrl}/og.png`,
         width: 1200,
         height: 630,
         alt: siteConfig.name,
@@ -65,7 +67,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: siteConfig.name,
     description: siteConfig.description,
-    images: [`${process.env.NEXT_PUBLIC_APP_URL}/og.png`],
+    images: [`${appUrl}/og.png`],
     creator: '@nxtvoid',
   },
   icons: {
