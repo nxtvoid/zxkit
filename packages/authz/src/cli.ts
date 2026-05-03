@@ -5,7 +5,7 @@ import { dirname, parse, resolve } from 'node:path'
 
 const SKILL_CONTENT = `---
 name: authz
-description: "Use when working with @zxkit/authz in this repository or in a consumer app: setting up Prisma roles and assignments, creating createAuthz server helpers, wiring client snapshots and guards, protecting Next.js routes with createAuthzProxy, seeding test roles, or debugging permissions, roles, cache invalidation, and authorization behavior."
+description: "Use when working with @zxkit/authz in this repository or in a consumer app: setting up Prisma roles and assignments, creating createAuthz server helpers, wiring client snapshots, guards, and navigation, protecting Next.js routes with createAuthzProxy, seeding test roles, or debugging permissions, roles, cache invalidation, and authorization behavior."
 ---
 
 # Authz
@@ -14,7 +14,7 @@ Use this skill when the task involves the \`@zxkit/authz\` package.
 
 ## Operating Rules For Agents
 
-- First inspect the app for existing \`permissions.ts\`, \`authz.ts\`, \`authz-client.ts\`, \`routes.ts\`, Prisma schema, auth helper, db helper, and Redis helper. Extend those files instead of creating duplicate authz setup.
+- First inspect the app for existing \`permissions.ts\`, \`authz.ts\`, \`authz-client.ts\`, \`routes.ts\`, \`navigation.ts\`, Prisma schema, auth helper, db helper, and Redis helper. Extend those files instead of creating duplicate authz setup.
 - Keep the permission catalog as the source of truth. Pass the same \`permissions\` object to \`createAuthz({ permissions, ... })\` and \`createAuthzClient(permissions)\`.
 - Server setup and client setup are separate files. The server helper must stay server-only; the client helper that calls \`createAuthzClient\` must start with \`'use client'\`.
 - Do not import \`Can\`, \`Guard\`, \`AuthzProvider\`, or hooks directly from \`@zxkit/authz/client\` in app code. Import them from the local typed \`authz-client.ts\`.
@@ -28,6 +28,7 @@ lib/authz/permissions.ts    # definePermissions catalog
 lib/authz/authz.ts          # server createAuthz helper
 lib/authz/authz-client.ts   # 'use client' createAuthzClient helper
 lib/authz/routes.ts         # optional shared route requirements
+lib/authz/navigation.ts     # optional typed navigation trees
 prisma/schema.prisma        # AuthzRole and AuthzUserRole models
 \`\`\`
 
@@ -216,6 +217,7 @@ export const {
   useAuthz,
   useAuthzRefresh,
   useAuthzSnapshot,
+  useAllowedNavigation,
   useAllowedRoutes,
   useCan,
   useCanAccessRoute,
@@ -284,7 +286,7 @@ Invalid resources or actions should be TypeScript errors:
 
 ## Routes And Proxy
 
-Define shared routes with \`defineRoutes\` when sidebars, guards, and server checks should use the same requirements. Keep permission names from the catalog.
+Define shared routes with \`defineRoutes\` when sidebars, menus, guards, navigation trees, and server checks should use the same requirements. Keep permission names from the catalog.
 
 \`\`\`ts
 import { defineRoutes } from '@zxkit/authz'
@@ -304,9 +306,72 @@ export const routes = defineRoutes({
     path: '/settings',
     label: 'Settings',
     permissions: { settings: ['manage'] },
-    roles: ['admin'],
+    roles: ['admin', 'owner'],
+    match: 'any',
   },
 })
+\`\`\`
+
+\`defineRoutes\` intentionally does not accept UI-only fields such as \`exact\`; put active matching behavior on \`defineNavigation\` nodes instead.
+
+Use \`defineNavigation(routes, areas)\` for navigation trees with groups, areas, icons, badges, active-match flags, or any UI metadata. The package only understands \`route\` and \`children\`; everything else is preserved as app metadata. Keep routes as the source of truth for \`path\`, \`label\`, \`permissions\`, and \`roles\`; put UI-only fields such as \`exact\` on navigation nodes.
+
+\`\`\`ts
+import { defineNavigation } from '@zxkit/authz'
+import { FileTextIcon, SettingsIcon, ShoppingBasketIcon } from 'lucide-react'
+import { routes } from './routes'
+
+export const navigation = defineNavigation(routes, {
+  default: {
+    direction: 'left',
+    children: [
+      {
+        name: 'General',
+        children: [
+          { route: 'orders', icon: ShoppingBasketIcon, exact: true },
+          { route: 'invoices', icon: FileTextIcon, exact: true },
+          { route: 'settings', icon: SettingsIcon, exact: true },
+        ],
+      },
+    ],
+  },
+  userSettings: {
+    title: 'Settings',
+    backRoute: 'orders',
+    direction: 'right',
+    children: [
+      {
+        name: 'Account',
+        children: [{ route: 'orders', icon: ShoppingBasketIcon }],
+      },
+    ],
+  },
+})
+\`\`\`
+
+Use the typed client navigation hook when the UI needs grouped, nested, or area-based navigation. It filters unauthorized route nodes, removes empty child groups, keeps top-level areas stable, and preserves metadata such as icons. The returned type exposes common UI fields such as \`title\`, \`backHref\`, \`name\`, \`exact\`, and \`rightContent\` as optional properties, so do not add manual \`in\` checks or casts unless the app uses custom metadata with a custom target type.
+
+\`\`\`tsx
+'use client'
+
+import Link from 'next/link'
+import { navigation } from './navigation'
+import { useAllowedNavigation } from './authz-client'
+
+export function Sidebar() {
+  const areas = useAllowedNavigation(navigation)
+
+  return areas.default.children.map((group) => (
+    <div key={group.name}>
+      {group.children.map((item) => (
+        <Link key={item.href} href={item.href}>
+          <item.icon />
+          {item.label as string}
+        </Link>
+      ))}
+    </div>
+  ))
+}
 \`\`\`
 
 Use the typed client route hook in client navigation.
@@ -338,25 +403,34 @@ import { routes } from './routes'
 await authz.requireRoute(routes.settings)
 \`\`\`
 
-For Next.js proxy, use \`createAuthzProxy\`.
+For Next.js proxy, use \`createAuthzProxy\`. Prefer the route-aware API for dashboard-style apps so protected areas are closed by default.
 
 \`\`\`ts
 import { createAuthzProxy } from '@zxkit/authz/next'
 import { authz } from './authz'
+import { routes } from './routes'
 
 export const proxy = createAuthzProxy({
   authz,
-  signInPath: '/login',
-  forbiddenPath: '/forbidden',
-  rules: [
-    { matcher: '/admin/:path*', roles: ['admin'] },
-    { matcher: '/billing/:path*', roles: ['admin', 'billing_manager'], match: 'any' },
-    { matcher: '/settings/:path*', permissions: { settings: ['manage'] } },
+  auth: {
+    signIn: '/login',
+    afterSignIn: '/hub',
+    forbidden: '/hub',
+  },
+  public: ['/'],
+  guestOnly: ['/login'],
+  protected: [
+    {
+      matcher: '/hub/:path*',
+      routes,
+    },
   ],
 })
 \`\`\`
 
-Multiple roles default to \`match: 'all'\`. Use \`match: 'any'\` only when any listed role should pass.
+\`public\` routes always pass. \`guestOnly\` routes pass only without a session and redirect signed-in users to \`auth.afterSignIn\`. Every \`protected\` area requires a session. Routes with \`permissions\` or \`roles\` require those checks. Multiple roles default to \`match: 'all'\`; set \`match: 'any'\` on the route when any listed role should pass. Routes without requirements are auth-only. Unknown paths inside a protected area are denied by default.
+
+\`auth.forbidden\` and \`auth.afterSignIn\` are validated when they point inside a protected area. They must resolve to an auth-only route, not a route that can deny permissions again.
 
 ## Cache And Invalidation
 
@@ -385,6 +459,8 @@ TTL values are seconds:
 \`\`\`ts
 redisCache(redis, { ttl: 60 * 30 }) // 30 minutes
 \`\`\`
+
+Session expiration does not delete a cached snapshot by itself. This is not used as authentication: \`getSnapshot()\`, \`can()\`, \`require()\`, and proxy checks resolve the current session before reading Redis, so an expired session cannot be authorized from a cached \`authz:user:<userId>:snapshot\` value. Keep a TTL on Redis anyway so old snapshots from users who never come back are cleaned up automatically and user metadata in snapshots does not live longer than intended.
 
 With \`@upstash/redis\`, do not \`JSON.parse\` manually. Upstash deserializes JSON values by default; pass the Redis instance to \`redisCache\`.
 
@@ -461,6 +537,7 @@ In consumer apps, validate the actual protected flow:
 - \`createAuthzClient\` server error: the local file that calls \`createAuthzClient(permissions)\` is missing \`'use client'\`.
 - Missing TypeScript autocomplete: import \`Can\`, \`Guard\`, and hooks from the local typed \`authz-client.ts\`, not directly from \`@zxkit/authz/client\`.
 - Wrong permission accepted by TS: make sure the same \`permissions\` catalog is passed to both \`createAuthz({ permissions, ... })\` and \`createAuthzClient(permissions)\`.
+- Navigation route key typos: define navigation with \`defineNavigation(routes, areas)\` and reference routes by key, for example \`{ route: 'orders', icon: OrdersIcon }\`.
 - Stale permission after a role mutation: mutate through \`authz.assignRole\`, \`authz.removeRole\`, \`authz.updateRole\`, or \`authz.deleteRole\` so cache invalidation runs.
 - Redis value error such as \`"[object Object]" is not valid JSON\`: remove manual \`JSON.parse\` / \`JSON.stringify\` when using \`@upstash/redis\` defaults, or use \`redisCache(redis, { ttl })\`.
 - Redis TTL always 60 seconds: remove unintended \`cacheTtl: 60\` from \`createAuthz\`, or set \`cacheTtl\` to the intended value. Prefer configuring TTL on \`redisCache(redis, { ttl })\`.

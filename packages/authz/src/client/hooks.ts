@@ -1,9 +1,19 @@
 'use client'
 
 import * as React from 'react'
-import type { AuthzRoute, PermissionInput, PermissionRequirement } from '../core/types'
+import type {
+  AuthzRoute,
+  AuthzRouteMap,
+  PermissionInput,
+  PermissionRequirement,
+} from '../core/types'
 import { hasPermissions } from '../core/permissions'
 import { hasMatchingRole } from '../core/roles'
+import {
+  getAllowedNavigation,
+  type AuthzNavigationConfig,
+  type AuthzNavigationDefinition,
+} from '../core/navigation'
 import { useAuthz } from './context'
 
 export function useAuthzSnapshot() {
@@ -36,7 +46,7 @@ export function useCanAccessRoute<TPermissions extends PermissionInput = Permiss
 ) {
   const { snapshot } = useAuthz()
   return (
-    hasMatchingRole(snapshot?.roles ?? [], route.roles) &&
+    hasMatchingRole(snapshot?.roles ?? [], route.roles, route.match) &&
     hasPermissions(snapshot?.permissions ?? {}, route.permissions as PermissionInput | undefined)
   )
 }
@@ -50,7 +60,7 @@ export function useAllowedRoutes<const TRoutes extends Record<string, AuthzRoute
     () =>
       Object.values(routes).filter(
         (route) =>
-          hasMatchingRole(snapshot?.roles ?? [], route.roles) &&
+          hasMatchingRole(snapshot?.roles ?? [], route.roles, route.match) &&
           hasPermissions(
             snapshot?.permissions ?? {},
             route.permissions as PermissionInput | undefined
@@ -58,4 +68,13 @@ export function useAllowedRoutes<const TRoutes extends Record<string, AuthzRoute
       ),
     [routes, snapshot?.permissions, snapshot?.roles]
   )
+}
+
+export function useAllowedNavigation<
+  const TRoutes extends AuthzRouteMap,
+  const TNavigation extends AuthzNavigationConfig<TRoutes>,
+>(navigation: AuthzNavigationDefinition<TRoutes, TNavigation>) {
+  const { snapshot } = useAuthz()
+
+  return React.useMemo(() => getAllowedNavigation(navigation, snapshot), [navigation, snapshot])
 }

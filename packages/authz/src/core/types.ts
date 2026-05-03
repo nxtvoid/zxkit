@@ -2,15 +2,33 @@ export type Awaitable<T> = T | Promise<T>
 
 export type PermissionInput = Record<string, readonly string[] | string[]>
 
+type RoutePermissionInput = Record<string, readonly string[] | string[] | undefined>
+
 export type Permissions = Record<string, string[]>
+
+type PermissionArray<TAction extends string> = Array<TAction> | readonly TAction[]
+
+type CatalogAction<TCatalog extends PermissionInput, TResource extends keyof TCatalog> = Extract<
+  TCatalog[TResource][number],
+  string
+>
 
 export type PermissionRequirement<TCatalog extends PermissionInput = PermissionInput> =
   string extends keyof TCatalog
     ? PermissionInput
     : {
-        [TResource in keyof TCatalog]?:
-          | Array<Extract<TCatalog[TResource][number], string>>
-          | readonly Extract<TCatalog[TResource][number], string>[]
+        [TResource in keyof TCatalog]?: PermissionArray<CatalogAction<TCatalog, TResource> | '*'>
+      } & {
+        '*'?: PermissionArray<'*'>
+      }
+
+export type PermissionSnapshot<TCatalog extends PermissionInput = PermissionInput> =
+  string extends keyof TCatalog
+    ? Permissions
+    : {
+        [TResource in keyof TCatalog]?: Array<CatalogAction<TCatalog, TResource> | '*'>
+      } & {
+        '*'?: Array<'*'>
       }
 
 export type AuthzUser = {
@@ -89,8 +107,21 @@ export type AuthzCache = {
 export type AuthzRoute<
   TMeta extends Record<string, unknown> = Record<string, unknown>,
   TCatalog extends PermissionInput = PermissionInput,
-> = TMeta & {
+> = Omit<TMeta, 'exact'> & {
   path: string
   permissions?: PermissionRequirement<TCatalog>
   roles?: readonly string[]
+  match?: 'all' | 'any'
+  exact?: never
 }
+
+export type AuthzRouteMap = Record<
+  string,
+  Record<string, unknown> & {
+    path: string
+    permissions?: RoutePermissionInput
+    roles?: readonly string[]
+    match?: 'all' | 'any'
+    exact?: never
+  }
+>

@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AccessDeniedError, createAuthz } from './server.js'
-import { definePermissions, memoryCache, type AuthzAdapter, type AuthzRole } from './index.js'
+import {
+  definePermissions,
+  memoryCache,
+  type AuthzAdapter,
+  type AuthzCache,
+  type AuthzRole,
+} from './index.js'
 
 const permissionCatalog = definePermissions({
   order: ['read', 'create', 'update', 'delete'],
@@ -359,5 +365,38 @@ describe('createAuthz', () => {
     await expect(authz.requireAuth()).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
     })
+  })
+
+  it('does not read cached snapshots when the session is missing', async () => {
+    const cachedSnapshot = {
+      user: { id: 'user-1' },
+      roles: ['admin'],
+      permissions: { '*': ['*'] },
+    }
+    const get = vi.fn()
+    const set = vi.fn()
+    const cache: AuthzCache = {
+      async get<T>(key: string) {
+        get(key)
+        return cachedSnapshot as T
+      },
+      async set<T>(key: string, value: T, options?: { ttl?: number }) {
+        set(key, value, options)
+      },
+      delete: vi.fn(async () => {}),
+    }
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => null,
+      adapter: createAdapter(),
+      cache,
+    })
+
+    await expect(authz.getSnapshot()).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    })
+
+    expect(get).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
   })
 })

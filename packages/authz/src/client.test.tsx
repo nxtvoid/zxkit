@@ -4,7 +4,7 @@ import * as React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { createAuthzClient } from './client.js'
-import { definePermissions, defineRoutes, type AuthzSnapshot } from './index.js'
+import { defineNavigation, definePermissions, defineRoutes, type AuthzSnapshot } from './index.js'
 
 const permissionCatalog = definePermissions({
   order: ['read', 'create', 'update', 'delete'],
@@ -12,7 +12,16 @@ const permissionCatalog = definePermissions({
   settings: ['manage'],
 })
 const typedClient = createAuthzClient(permissionCatalog)
-const { AuthzProvider, Can, Guard, Role, useAllowedRoutes, useCan, useRoles } = typedClient
+const {
+  AuthzProvider,
+  Can,
+  Guard,
+  Role,
+  useAllowedNavigation,
+  useAllowedRoutes,
+  useCan,
+  useRoles,
+} = typedClient
 type TypedCanProps = React.ComponentProps<typeof typedClient.Can>
 type TypedUseCanPermissions = Parameters<typeof typedClient.useCan>[0]
 
@@ -21,6 +30,10 @@ const typedCanProps: TypedCanProps = {
 }
 const typedUseCanPermissions: TypedUseCanPermissions = {
   settings: ['manage'],
+}
+const typedUseCanWildcardPermissions: TypedUseCanPermissions = {
+  '*': ['*'],
+  order: ['*'],
 }
 
 const typedCanPropsInvalidAction: TypedCanProps = {
@@ -34,13 +47,138 @@ const typedUseCanPermissionsInvalidResource: TypedUseCanPermissions = {
   // @ts-expect-error customer is not in the permission catalog.
   customer: ['read'],
 }
+const typedUseCanPermissionsInvalidGlobalWildcard: TypedUseCanPermissions = {
+  // @ts-expect-error global wildcard only supports the "*" action.
+  '*': ['read'],
+}
+
+const typedInvalidNavigationRoutes = defineRoutes({
+  settings: {
+    path: '/settings',
+    label: 'Settings',
+    permissions: {
+      settings: ['delete'],
+    },
+  },
+})
+
+const typedInvalidNavigation = defineNavigation(typedInvalidNavigationRoutes, {
+  default: {
+    children: [
+      {
+        children: [{ route: 'settings', icon: 'settings' }],
+      },
+    ],
+  },
+})
+
+const typedNavigationRoutes = defineRoutes({
+  orders: {
+    path: '/orders',
+    label: 'Orders',
+    permissions: { order: ['read'] },
+  },
+  account: {
+    path: '/account',
+    label: 'Account',
+  },
+})
+
+const typedNavigation = defineNavigation(typedNavigationRoutes, {
+  default: {
+    direction: 'left',
+    children: [
+      {
+        name: 'General',
+        children: [{ route: 'orders', icon: 'orders-icon', exact: true }],
+      },
+    ],
+  },
+  userSettings: {
+    title: 'Settings',
+    backHref: '/orders',
+    direction: 'right',
+    children: [
+      {
+        children: [{ route: 'account', icon: 'account-icon', exact: true }],
+      },
+    ],
+  },
+})
+
+function TypedInvalidNavigationConsumer() {
+  // @ts-expect-error settings only supports manage.
+  useAllowedNavigation(typedInvalidNavigation)
+  return null
+}
+
+function TypedNavigationCommonFieldsConsumer() {
+  const areas = useAllowedNavigation(typedNavigation)
+
+  for (const area of Object.values(areas)) {
+    const title: string | undefined = area.title
+    const backHref: string | undefined = area.backHref
+    const direction: 'left' | 'right' | undefined = area.direction
+
+    for (const group of area.children) {
+      const name: string | undefined = group.name
+
+      for (const item of group.children) {
+        const label: string | undefined = item.label
+        const href: string = item.href
+        const exact: boolean | undefined = item.exact
+        const rightContent: React.ReactNode = item.rightContent
+
+        void [label, href, exact, rightContent]
+      }
+
+      void name
+    }
+
+    void [title, backHref, direction]
+  }
+
+  return null
+}
+
+function TypedSnapshotPermissionsConsumer() {
+  const snapshot = typedClient.useAuthzSnapshot()
+  const context = typedClient.useAuthz()
+  const orderPermissions: Array<'read' | 'create' | 'update' | 'delete' | '*'> | undefined =
+    snapshot?.permissions.order
+  const adminPermissions: Array<'*'> | undefined = snapshot?.permissions['*']
+  const invoicePermissions: Array<'read' | 'export' | '*'> | undefined =
+    context.snapshot?.permissions.invoice
+  const settingsPermissions: Array<'manage' | '*'> | undefined = snapshot?.permissions.settings
+
+  // @ts-expect-error customer is not in the permission catalog.
+  const unknownPermissions = snapshot?.permissions.customer
+  // @ts-expect-error settings only supports manage.
+  const invalidSettingsPermissions: Array<'delete'> | undefined = snapshot?.permissions.settings
+
+  void [
+    orderPermissions,
+    adminPermissions,
+    invoicePermissions,
+    settingsPermissions,
+    unknownPermissions,
+    invalidSettingsPermissions,
+  ]
+
+  return null
+}
 
 void [
   typedClient,
   typedCanProps,
   typedUseCanPermissions,
+  typedUseCanWildcardPermissions,
   typedCanPropsInvalidAction,
   typedUseCanPermissionsInvalidResource,
+  typedUseCanPermissionsInvalidGlobalWildcard,
+  TypedInvalidNavigationConsumer,
+  TypedNavigationCommonFieldsConsumer,
+  TypedSnapshotPermissionsConsumer,
 ]
 
 const snapshot: AuthzSnapshot = {
@@ -96,6 +234,17 @@ describe('AuthzProvider', () => {
         label: 'Settings',
         permissions: { settings: ['manage'] },
       },
+      roleArea: {
+        path: '/role-area',
+        label: 'Role area',
+        roles: ['orders_manager', 'admin'],
+        match: 'any',
+      },
+      strictRoleArea: {
+        path: '/strict-role-area',
+        label: 'Strict role area',
+        roles: ['orders_manager', 'admin'],
+      },
     })
 
     function Sidebar() {
@@ -120,6 +269,97 @@ describe('AuthzProvider', () => {
 
     expect(screen.queryByText('Orders')).not.toBeNull()
     expect(screen.queryByText('Settings')).toBeNull()
+    expect(screen.queryByText('Role area')).not.toBeNull()
+    expect(screen.queryByText('Strict role area')).toBeNull()
+  })
+
+  it('filters typed navigation areas and preserves item metadata', () => {
+    function OrdersIcon() {
+      return null
+    }
+
+    const routes = defineRoutes({
+      orders: {
+        path: '/orders',
+        label: 'Orders',
+        permissions: { order: ['read'] },
+      },
+      settings: {
+        path: '/settings',
+        label: 'Settings',
+        permissions: { settings: ['manage'] },
+      },
+      account: {
+        path: '/account',
+        label: 'Account',
+      },
+    })
+
+    const navigation = defineNavigation(routes, {
+      default: {
+        direction: 'left',
+        children: [
+          {
+            name: 'General',
+            children: [
+              { route: 'orders', icon: OrdersIcon },
+              { route: 'settings', icon: 'settings-icon', exact: true },
+            ],
+          },
+        ],
+      },
+      userSettings: {
+        title: 'Settings',
+        backRoute: 'orders',
+        direction: 'right',
+        children: [
+          {
+            name: 'Account',
+            children: [{ route: 'account', icon: 'account-icon', exact: true }],
+          },
+        ],
+      },
+    })
+
+    function Sidebar() {
+      const areas = useAllowedNavigation(navigation)
+      const defaultItems = areas.default.children.flatMap((group) => group.children)
+      const accountItems = areas.userSettings.children.flatMap((group) => group.children)
+
+      return (
+        <nav>
+          <span>default-groups:{areas.default.children.length}</span>
+          {defaultItems.map((item) => (
+            <a
+              key={item.href}
+              href={item.href}
+              data-icon={item.icon === OrdersIcon ? 'orders' : ''}
+            >
+              {item.label as string}
+            </a>
+          ))}
+          {accountItems.map((item) => (
+            <a key={item.href} href={item.href}>
+              {item.label as string}
+            </a>
+          ))}
+        </nav>
+      )
+    }
+
+    const { container } = render(
+      <AuthzProvider snapshot={snapshot}>
+        <Sidebar />
+      </AuthzProvider>
+    )
+
+    const nav = container.querySelector('nav')
+
+    expect(nav?.textContent).toContain('default-groups:1')
+    expect(nav?.textContent).toContain('Orders')
+    expect(nav?.querySelector('[data-icon="orders"]')?.textContent).toBe('Orders')
+    expect(nav?.textContent).not.toContain('Settings')
+    expect(nav?.textContent).toContain('Account')
   })
 
   it('supports guards and refresh callbacks', async () => {

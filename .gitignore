@@ -27,6 +27,8 @@ out/
 build
 dist
 
+# .tgz files
+*.tgz
 
 # Debug
 npm-debug.log*

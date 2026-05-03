@@ -1,7 +1,11 @@
 'use client'
 
 export { createAuthzClient } from './client/create-client'
-export type { TypedAuthzClient } from './client/create-client'
+export type {
+  TypedAuthzClient,
+  TypedAuthzContextValue,
+  TypedAuthzSnapshot,
+} from './client/create-client'
 export type {
   AuthzClientContextValue,
   AuthzProviderComponent,

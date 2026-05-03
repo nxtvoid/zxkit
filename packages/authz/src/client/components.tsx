@@ -89,9 +89,10 @@ export function Guard<TPermissions extends PermissionInput = PermissionInput>({
 }: GuardProps<TPermissions>) {
   const { isPending, snapshot } = useAuthz()
   const requiredRoles = route?.roles ?? (role ? [role] : roles)
+  const requiredRoleMatch = route?.match ?? match
   const requiredPermissions = route?.permissions ?? permissions
   const allowed =
-    hasMatchingRole(snapshot?.roles ?? [], requiredRoles, match) &&
+    hasMatchingRole(snapshot?.roles ?? [], requiredRoles, requiredRoleMatch) &&
     hasPermissions(snapshot?.permissions ?? {}, requiredPermissions as PermissionInput | undefined)
 
   if (isPending) {
