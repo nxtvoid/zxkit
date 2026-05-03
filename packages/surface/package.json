@@ -6,7 +6,8 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nxtvoid/zxkit/tree/main/packages/surface"
+    "url": "https://github.com/nxtvoid/zxkit",
+    "directory": "packages/surface"
   },
   "keywords": [
     "shadcn",

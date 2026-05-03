@@ -19,10 +19,13 @@
   },
   "packageManager": "bun@1.3.3",
   "scripts": {
-    "build": "turbo build",
-    "dev": "turbo dev",
-    "lint": "turbo lint",
-    "check": "turbo check-types",
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "check": "turbo run check-types",
+    "test": "turbo run test",
+    "version-packages": "changeset version",
+    "release": "changeset publish",
     "format": "prettier --write \"**/*.{js,ts,tsx,md,json,mjs,css}\"",
     "format:check": "prettier --check \"**/*.{js,ts,tsx,md,json,mjs,css}\"",
     "prepare": "husky"
