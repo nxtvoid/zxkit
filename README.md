@@ -1,14 +1,22 @@
 # zxkit
 
-A collection of React components and utilities for building modern web applications.
+A collection of React components, utilities, and tooling for building modern web applications.
 
 ## Packages
 
-| Package                                | Description                                    |
-| -------------------------------------- | ---------------------------------------------- |
-| [`@zxkit/qrix`](./packages/qrix)       | QR code generator for React                    |
-| [`@zxkit/surface`](./packages/surface) | Handle yout dialog, sheet and drawer with ease |
-| [`@zxkit/ui`](./packages/ui)           | Shared UI components (internal)                |
+| Package                                | Description                                                      |
+| -------------------------------------- | ---------------------------------------------------------------- |
+| [`@zxkit/authz`](./packages/authz)     | Storage-agnostic roles, permissions, guards, and Next.js helpers |
+| [`@zxkit/qrix`](./packages/qrix)       | QR code generator for React                                      |
+| [`@zxkit/surface`](./packages/surface) | Dialog, sheet, and drawer helpers for React                      |
+
+## Internal Packages
+
+| Package                                                        | Description                     |
+| -------------------------------------------------------------- | ------------------------------- |
+| [`@workspace/eslint-config`](./packages/eslint-config)         | Shared ESLint configuration     |
+| [`@workspace/typescript-config`](./packages/typescript-config) | Shared TypeScript configuration |
+| [`@zxkit/ui`](./packages/ui)                                   | Shared UI components            |
 
 ## Getting Started
 
