@@ -10,4 +10,6 @@ export type {
   GuardProps,
   RoleProps,
   TypedAuthzClient,
+  TypedAuthzContextValue,
+  TypedAuthzSnapshot,
 } from './client.js'

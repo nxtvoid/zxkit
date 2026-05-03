@@ -1,6 +1,17 @@
 'use client'
 
-import type { AuthzRoute, PermissionInput, PermissionRequirement } from '../core/types'
+import type {
+  AuthzRoute,
+  AuthzUser,
+  PermissionInput,
+  PermissionRequirement,
+  PermissionSnapshot,
+} from '../core/types'
+import type {
+  AuthzAllowedNavigation,
+  AuthzNavigationConfig,
+  AuthzNavigationDefinition,
+} from '../core/navigation'
 import {
   Can,
   Guard,
@@ -12,6 +23,7 @@ import {
 import { AuthzProvider, type AuthzProviderComponent, useAuthz } from './context'
 import {
   useAllowedRoutes,
+  useAllowedNavigation,
   useAuthzRefresh,
   useAuthzSnapshot,
   useCan,
@@ -19,6 +31,18 @@ import {
   useHasRole,
   useRoles,
 } from './hooks'
+
+export type TypedAuthzSnapshot<TPermissions extends PermissionInput> = {
+  user: AuthzUser
+  roles: string[]
+  permissions: PermissionSnapshot<TPermissions>
+}
+
+export type TypedAuthzContextValue<TPermissions extends PermissionInput> = {
+  snapshot: TypedAuthzSnapshot<TPermissions> | null
+  isPending: boolean
+  refresh?: () => Promise<void>
+}
 
 export type TypedAuthzClient<TPermissions extends PermissionInput> = {
   AuthzProvider: AuthzProviderComponent
@@ -30,13 +54,19 @@ export type TypedAuthzClient<TPermissions extends PermissionInput> = {
   >(
     routes: TRoutes
   ) => Array<TRoutes[keyof TRoutes]>
-  useAuthz: typeof useAuthz
-  useAuthzRefresh: typeof useAuthzRefresh
-  useAuthzSnapshot: typeof useAuthzSnapshot
+  useAllowedNavigation: <
+    const TRoutes extends Record<string, AuthzRoute<Record<string, unknown>, TPermissions>>,
+    const TNavigation extends AuthzNavigationConfig<TRoutes>,
+  >(
+    navigation: AuthzNavigationDefinition<TRoutes, TNavigation>
+  ) => AuthzAllowedNavigation<TRoutes, TNavigation>
+  useAuthz: () => TypedAuthzContextValue<TPermissions>
+  useAuthzRefresh: () => (() => Promise<void>) | undefined
+  useAuthzSnapshot: () => TypedAuthzSnapshot<TPermissions> | null
   useCan: (permissions?: PermissionRequirement<TPermissions>) => boolean
   useCanAccessRoute: (route: AuthzRoute<Record<string, unknown>, TPermissions>) => boolean
-  useHasRole: typeof useHasRole
-  useRoles: typeof useRoles
+  useHasRole: (role: string | readonly string[], options?: { match?: 'all' | 'any' }) => boolean
+  useRoles: () => string[]
 }
 
 export function createAuthzClient<const TPermissions extends PermissionInput>(
@@ -50,9 +80,11 @@ export function createAuthzClient<const TPermissions extends PermissionInput>(
     Guard: Guard as AuthzGuardComponent<TPermissions>,
     Role,
     useAllowedRoutes: useAllowedRoutes as TypedAuthzClient<TPermissions>['useAllowedRoutes'],
-    useAuthz,
+    useAllowedNavigation:
+      useAllowedNavigation as TypedAuthzClient<TPermissions>['useAllowedNavigation'],
+    useAuthz: useAuthz as TypedAuthzClient<TPermissions>['useAuthz'],
     useAuthzRefresh,
-    useAuthzSnapshot,
+    useAuthzSnapshot: useAuthzSnapshot as TypedAuthzClient<TPermissions>['useAuthzSnapshot'],
     useCan: useCan as TypedAuthzClient<TPermissions>['useCan'],
     useCanAccessRoute: useCanAccessRoute as TypedAuthzClient<TPermissions>['useCanAccessRoute'],
     useHasRole,

@@ -196,7 +196,7 @@ export function createAuthz<
   ) {
     const snapshot = await getSnapshot(guardOptions)
     return (
-      hasMatchingRole(snapshot.roles, route.roles) &&
+      hasMatchingRole(snapshot.roles, route.roles, route.match) &&
       hasPermissions(snapshot.permissions, route.permissions as PermissionInput | undefined)
     )
   }
