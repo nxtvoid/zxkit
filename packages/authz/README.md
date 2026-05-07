@@ -323,7 +323,7 @@ export function Breadcrumbs() {
 
   return (
     <nav aria-label='Breadcrumb'>
-      {breadcrumb.map((item) =>
+      {breadcrumb.slice(0, -1).map((item) =>
         item.href ? (
           <Link key={item.href} href={item.href}>
             {String(item.name ?? item.label)}
