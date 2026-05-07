@@ -219,6 +219,8 @@ export const {
   useAuthzSnapshot,
   useAllowedNavigation,
   useAllowedRoutes,
+  useCurrentNavigationNode,
+  useNavigationBreadcrumb,
   useCan,
   useCanAccessRoute,
   useHasRole,
@@ -371,6 +373,38 @@ export function Sidebar() {
       ))}
     </div>
   ))
+}
+\`\`\`
+
+Use \`useNavigationBreadcrumb(navigation, pathname)\` for the current allowed navigation trail and \`useCurrentNavigationNode(navigation, pathname)\` for the active item. Pass the pathname from your router, for example Next.js \`usePathname()\`. Unauthorized route nodes are filtered before matching, so breadcrumbs do not reveal protected items the user cannot access. Breadcrumb items are flattened crumbs: they keep useful metadata such as \`name\`, \`label\`, \`href\`, \`route\`, and \`icon\`, but do not include nested \`children\`.
+
+\`\`\`tsx
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { navigation } from './navigation'
+import { useCurrentNavigationNode, useNavigationBreadcrumb } from './authz-client'
+
+export function Breadcrumbs() {
+  const pathname = usePathname()
+  const breadcrumb = useNavigationBreadcrumb(navigation, pathname)
+  const current = useCurrentNavigationNode(navigation, pathname)
+
+  return (
+    <nav aria-label='Breadcrumb'>
+      {breadcrumb.map((item) =>
+        item.href ? (
+          <Link key={item.href} href={item.href}>
+            {String(item.name ?? item.label)}
+          </Link>
+        ) : (
+          <span key={String(item.name ?? item.label)}>{String(item.name ?? item.label)}</span>
+        )
+      )}
+      <span>{String(current?.label ?? current?.name ?? '')}</span>
+    </nav>
+  )
 }
 \`\`\`
 

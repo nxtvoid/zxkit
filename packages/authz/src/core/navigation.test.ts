@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { defineNavigation, getAllowedNavigation } from './navigation'
+import {
+  defineNavigation,
+  getAllowedNavigation,
+  getCurrentNavigationNode,
+  getNavigationBreadcrumb,
+} from './navigation'
 import { defineRoutes } from './routes'
 import type { AuthzSnapshot } from './types'
 
@@ -149,5 +154,64 @@ describe('navigation helpers', () => {
     expect(allowedNavigation.default.children[0]?.children.map((item) => item.route)).toEqual([
       'hub',
     ])
+  })
+
+  it('returns the current allowed breadcrumb for a pathname', () => {
+    const breadcrumb = getNavigationBreadcrumb(navigation, '/hub/orders/123?tab=details', snapshot)
+    const current = getCurrentNavigationNode(navigation, '/hub/orders/123', snapshot)
+
+    expect(breadcrumb.map((item) => item.name ?? item.label)).toEqual(['General', 'Orders'])
+    expect(breadcrumb.every((item) => !('children' in item))).toBe(true)
+    expect(current).toMatchObject({
+      route: 'orders',
+      href: '/hub/orders',
+      icon: OrdersIcon,
+    })
+    expect(current).not.toHaveProperty('children')
+  })
+
+  it('falls back to allowed ancestors without leaking unauthorized entries', () => {
+    const breadcrumb = getNavigationBreadcrumb(navigation, '/hub/settings', snapshot)
+    const current = getCurrentNavigationNode(navigation, '/hub/settings', snapshot)
+
+    expect(breadcrumb.map((item) => item.name ?? item.label)).toEqual(['General', 'Home'])
+    expect(current).toMatchObject({
+      route: 'hub',
+      href: '/hub',
+    })
+    expect(current).not.toHaveProperty('children')
+  })
+
+  it('returns empty breadcrumb and null node for unmatched pathname', () => {
+    const breadcrumb = getNavigationBreadcrumb(navigation, '/not-found', snapshot)
+    const current = getCurrentNavigationNode(navigation, '/not-found', snapshot)
+
+    expect(breadcrumb).toEqual([])
+    expect(current).toBeNull()
+  })
+
+  it('matches dynamic route segments in breadcrumb', () => {
+    const dynamicRoutes = defineRoutes({
+      orders: { path: '/orders', label: 'Orders' },
+      orderDetails: { path: '/orders/:id', label: 'Order details' },
+    })
+
+    const dynamicNavigation = defineNavigation(dynamicRoutes, {
+      default: {
+        children: [
+          {
+            name: 'Sales',
+            children: [{ route: 'orders' }, { route: 'orderDetails' }],
+          },
+        ],
+      },
+    })
+
+    const breadcrumb = getNavigationBreadcrumb(dynamicNavigation, '/orders/123', null)
+    const current = getCurrentNavigationNode(dynamicNavigation, '/orders/123', null)
+
+    expect(breadcrumb.map((item) => item.name ?? item.label)).toEqual(['Sales', 'Order details'])
+    expect(current).toMatchObject({ href: '/orders/:id', label: 'Order details' })
+    expect(current).not.toHaveProperty('children')
   })
 })
