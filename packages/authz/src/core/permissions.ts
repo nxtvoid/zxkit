@@ -37,16 +37,15 @@ export function hasPermissions(owned: PermissionInput, required: PermissionInput
     return true
   }
 
-  const normalizedOwned = normalizePermissions(owned)
   const normalizedRequired = normalizePermissions(required)
-  const globalActions = normalizedOwned['*'] ?? []
+  const globalActions = owned['*'] ?? []
 
   if (globalActions.includes('*')) {
     return true
   }
 
   return Object.entries(normalizedRequired).every(([resource, actions]) => {
-    const ownedActions = normalizedOwned[resource] ?? []
+    const ownedActions = owned[resource] ?? []
 
     if (ownedActions.includes('*')) {
       return true

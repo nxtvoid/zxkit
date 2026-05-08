@@ -92,6 +92,7 @@ export function createAuthz<
 
   const cache = options.cache === false ? createNoopCache() : (options.cache ?? createNoopCache())
   const cacheSetOptions = options.cacheTtl ? { ttl: options.cacheTtl } : undefined
+  const inFlight = new Map<string, Promise<AuthzSnapshot<TUser>>>()
 
   async function getSession() {
     return options.getSession()
@@ -107,26 +108,35 @@ export function createAuthz<
     return session
   }
 
-  async function getSnapshot(snapshotOptions?: GuardOptions): Promise<AuthzSnapshot<TUser>> {
-    const session = await requireAuth()
-    const key = createSnapshotKey(session.user.id)
-
-    if (!snapshotOptions?.bypassCache) {
-      const cached = await cache.get<AuthzSnapshot<TUser>>(key)
-
-      if (cached) {
-        return cached
-      }
-    }
-
+  async function fetchSnapshot(session: AuthzSession<TUser>, key: string) {
     const roles = await options.adapter.getUserRoles({
       userId: session.user.id,
       user: session.user,
     })
     const snapshot = createSnapshot(session.user, roles)
     await cache.set(key, snapshot, cacheSetOptions)
-
     return snapshot
+  }
+
+  async function getSnapshot(snapshotOptions?: GuardOptions): Promise<AuthzSnapshot<TUser>> {
+    const session = await requireAuth()
+    const key = createSnapshotKey(session.user.id)
+
+    if (!snapshotOptions?.bypassCache) {
+      const cached = await cache.get<AuthzSnapshot<TUser>>(key)
+      if (cached) return cached
+
+      const existing = inFlight.get(key)
+      if (existing) return existing
+    }
+
+    const promise = fetchSnapshot(session, key).finally(() => inFlight.delete(key))
+
+    if (!snapshotOptions?.bypassCache) {
+      inFlight.set(key, promise)
+    }
+
+    return promise
   }
 
   async function invalidateUser(userId: string) {
@@ -152,7 +162,13 @@ export function createAuthz<
 
     if (cache.clearNamespace) {
       await cache.clearNamespace(SNAPSHOT_NAMESPACE)
+      return
     }
+
+    console.warn(
+      `Cache for role "${roleId}" could not be invalidated: ` +
+        'implement adapter.listUserIdsByRole or cache.clearNamespace to enable role-level invalidation.'
+    )
   }
 
   async function can(
@@ -298,10 +314,12 @@ export function createAuthz<
         })
       }
 
+      console.error(`Could not create role "${input.name}":`, error)
+
       return roleResult({
         success: false,
         code: 'ROLE_CREATE_FAILED',
-        message: `Could not create role "${input.name}": ${getErrorMessage(error)}`,
+        message: `Could not create role "${input.name}".`,
       })
     }
   }
@@ -319,7 +337,15 @@ export function createAuthz<
       ...input,
       permissions: input.permissions as PermissionInput | undefined,
     })
-    await invalidateRole(roleId)
+
+    try {
+      await invalidateRole(roleId)
+    } catch (error) {
+      console.warn(
+        `Role "${roleId}" updated, but cache invalidation failed: ${getErrorMessage(error)}`
+      )
+    }
+
     return role
   }
 
@@ -330,12 +356,17 @@ export function createAuthz<
 
     await options.adapter.deleteRole(roleId)
 
-    if (userIds) {
-      await invalidateUsers(userIds)
-      return
+    try {
+      if (userIds) {
+        await invalidateUsers(userIds)
+      } else {
+        await invalidateRole(roleId)
+      }
+    } catch (error) {
+      console.warn(
+        `Role "${roleId}" deleted, but cache invalidation failed: ${getErrorMessage(error)}`
+      )
     }
-
-    await invalidateRole(roleId)
   }
 
   async function finishUserRoleMutation(
@@ -349,10 +380,15 @@ export function createAuthz<
         message: successMessage,
       })
     } catch (error) {
+      console.warn(
+        `Role changed for user "${userId}", but cached snapshot could not be invalidated:`,
+        error
+      )
+
       return mutationResult({
         success: false,
         code: 'CACHE_INVALIDATION_FAILED',
-        message: `Role changed, but cached snapshot for user "${userId}" could not be invalidated: ${getErrorMessage(error)}`,
+        message: `Role changed, but cached snapshot for user "${userId}" could not be invalidated.`,
       })
     }
   }
@@ -372,17 +408,22 @@ export function createAuthz<
         })
       }
 
+      console.error(`Could not assign role "${input.roleId}" to user "${input.userId}":`, error)
+
       return mutationResult({
         success: false,
         code: 'ROLE_ASSIGNMENT_FAILED',
-        message: `Could not assign role "${input.roleId}" to user "${input.userId}": ${getErrorMessage(error)}`,
+        message: `Could not assign role "${input.roleId}" to user "${input.userId}".`,
       })
     }
   }
 
-  async function removeRole(input: { userId: string; roleId: string }) {
+  async function removeRole(input: {
+    userId: string
+    roleId: string
+  }): Promise<AuthzMutationResult> {
     await options.adapter.removeRole(input)
-    await invalidateUser(input.userId)
+    return finishUserRoleMutation(input.userId, `Role "${input.roleId}" removed.`)
   }
 
   return {
