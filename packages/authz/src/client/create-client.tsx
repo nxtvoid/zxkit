@@ -9,6 +9,8 @@ import type {
 } from '../core/types'
 import type {
   AuthzAllowedNavigation,
+  AuthzNavigationBreadcrumb,
+  AuthzNavigationBreadcrumbNode,
   AuthzNavigationConfig,
   AuthzNavigationDefinition,
 } from '../core/navigation'
@@ -28,7 +30,9 @@ import {
   useAuthzSnapshot,
   useCan,
   useCanAccessRoute,
+  useCurrentNavigationNode,
   useHasRole,
+  useNavigationBreadcrumb,
   useRoles,
 } from './hooks'
 
@@ -60,6 +64,20 @@ export type TypedAuthzClient<TPermissions extends PermissionInput> = {
   >(
     navigation: AuthzNavigationDefinition<TRoutes, TNavigation>
   ) => AuthzAllowedNavigation<TRoutes, TNavigation>
+  useNavigationBreadcrumb: <
+    const TRoutes extends Record<string, AuthzRoute<Record<string, unknown>, TPermissions>>,
+    const TNavigation extends AuthzNavigationConfig<TRoutes>,
+  >(
+    navigation: AuthzNavigationDefinition<TRoutes, TNavigation>,
+    pathname: string
+  ) => AuthzNavigationBreadcrumb<TRoutes, TNavigation>
+  useCurrentNavigationNode: <
+    const TRoutes extends Record<string, AuthzRoute<Record<string, unknown>, TPermissions>>,
+    const TNavigation extends AuthzNavigationConfig<TRoutes>,
+  >(
+    navigation: AuthzNavigationDefinition<TRoutes, TNavigation>,
+    pathname: string
+  ) => AuthzNavigationBreadcrumbNode<TRoutes, TNavigation> | null
   useAuthz: () => TypedAuthzContextValue<TPermissions>
   useAuthzRefresh: () => (() => Promise<void>) | undefined
   useAuthzSnapshot: () => TypedAuthzSnapshot<TPermissions> | null
@@ -82,6 +100,10 @@ export function createAuthzClient<const TPermissions extends PermissionInput>(
     useAllowedRoutes: useAllowedRoutes as TypedAuthzClient<TPermissions>['useAllowedRoutes'],
     useAllowedNavigation:
       useAllowedNavigation as TypedAuthzClient<TPermissions>['useAllowedNavigation'],
+    useNavigationBreadcrumb:
+      useNavigationBreadcrumb as TypedAuthzClient<TPermissions>['useNavigationBreadcrumb'],
+    useCurrentNavigationNode:
+      useCurrentNavigationNode as TypedAuthzClient<TPermissions>['useCurrentNavigationNode'],
     useAuthz: useAuthz as TypedAuthzClient<TPermissions>['useAuthz'],
     useAuthzRefresh,
     useAuthzSnapshot: useAuthzSnapshot as TypedAuthzClient<TPermissions>['useAuthzSnapshot'],

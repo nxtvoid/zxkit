@@ -11,6 +11,8 @@ import { hasPermissions } from '../core/permissions'
 import { hasMatchingRole } from '../core/roles'
 import {
   getAllowedNavigation,
+  getCurrentNavigationNode,
+  getNavigationBreadcrumb,
   type AuthzNavigationConfig,
   type AuthzNavigationDefinition,
 } from '../core/navigation'
@@ -77,4 +79,28 @@ export function useAllowedNavigation<
   const { snapshot } = useAuthz()
 
   return React.useMemo(() => getAllowedNavigation(navigation, snapshot), [navigation, snapshot])
+}
+
+export function useNavigationBreadcrumb<
+  const TRoutes extends AuthzRouteMap,
+  const TNavigation extends AuthzNavigationConfig<TRoutes>,
+>(navigation: AuthzNavigationDefinition<TRoutes, TNavigation>, pathname: string) {
+  const { snapshot } = useAuthz()
+
+  return React.useMemo(
+    () => getNavigationBreadcrumb(navigation, pathname, snapshot),
+    [navigation, pathname, snapshot]
+  )
+}
+
+export function useCurrentNavigationNode<
+  const TRoutes extends AuthzRouteMap,
+  const TNavigation extends AuthzNavigationConfig<TRoutes>,
+>(navigation: AuthzNavigationDefinition<TRoutes, TNavigation>, pathname: string) {
+  const { snapshot } = useAuthz()
+
+  return React.useMemo(
+    () => getCurrentNavigationNode(navigation, pathname, snapshot),
+    [navigation, pathname, snapshot]
+  )
 }
