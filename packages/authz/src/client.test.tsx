@@ -20,6 +20,8 @@ const {
   useAllowedNavigation,
   useAllowedRoutes,
   useCan,
+  useCurrentNavigationNode,
+  useNavigationBreadcrumb,
   useRoles,
 } = typedClient
 type TypedCanProps = React.ComponentProps<typeof typedClient.Can>
@@ -114,6 +116,8 @@ function TypedInvalidNavigationConsumer() {
 
 function TypedNavigationCommonFieldsConsumer() {
   const areas = useAllowedNavigation(typedNavigation)
+  const breadcrumb = useNavigationBreadcrumb(typedNavigation, '/orders/123')
+  const current = useCurrentNavigationNode(typedNavigation, '/orders/123')
 
   for (const area of Object.values(areas)) {
     const title: string | undefined = area.title
@@ -137,6 +141,21 @@ function TypedNavigationCommonFieldsConsumer() {
 
     void [title, backHref, direction]
   }
+
+  const currentLabel: string | undefined = current?.label
+  const currentIcon: string | undefined = current?.icon
+
+  for (const item of breadcrumb) {
+    const href: string | undefined = item.href
+    const label: string | undefined = item.label
+    const name: string | undefined = item.name
+    const icon: string | undefined = item.icon
+    const children: undefined = item.children
+
+    void [href, label, name, icon, children]
+  }
+
+  void [currentLabel, currentIcon]
 
   return null
 }
@@ -360,6 +379,72 @@ describe('AuthzProvider', () => {
     expect(nav?.querySelector('[data-icon="orders"]')?.textContent).toBe('Orders')
     expect(nav?.textContent).not.toContain('Settings')
     expect(nav?.textContent).toContain('Account')
+  })
+
+  it('returns the current navigation breadcrumb from a pathname', () => {
+    const routes = defineRoutes({
+      orders: {
+        path: '/orders',
+        label: 'Orders',
+        permissions: { order: ['read'] },
+      },
+      orderDetails: {
+        path: '/orders/:id',
+        label: 'Order details',
+        permissions: { order: ['read'] },
+      },
+      settings: {
+        path: '/settings',
+        label: 'Settings',
+        permissions: { settings: ['manage'] },
+      },
+    })
+
+    const navigation = defineNavigation(routes, {
+      default: {
+        children: [
+          {
+            name: 'Sales',
+            children: [
+              { route: 'orders', icon: 'orders-icon' },
+              { route: 'orderDetails', icon: 'order-details-icon' },
+              { route: 'settings', icon: 'settings-icon' },
+            ],
+          },
+        ],
+      },
+    })
+
+    function Breadcrumb() {
+      const breadcrumb = useNavigationBreadcrumb(navigation, '/orders/123')
+      const current = useCurrentNavigationNode(navigation, '/orders/123')
+
+      return (
+        <nav>
+          <span>current:{String(current?.label)}</span>
+          <span>current-icon:{String(current?.icon)}</span>
+          {breadcrumb.map((item) => (
+            <a key={`${item.name ?? ''}${item.href ?? ''}`} href={item.href}>
+              {String(item.name ?? item.label)}
+              {'children' in item ? 'with-children' : null}
+            </a>
+          ))}
+        </nav>
+      )
+    }
+
+    render(
+      <AuthzProvider snapshot={snapshot}>
+        <Breadcrumb />
+      </AuthzProvider>
+    )
+
+    expect(screen.queryByText('current:Order details')).not.toBeNull()
+    expect(screen.queryByText('current-icon:order-details-icon')).not.toBeNull()
+    expect(screen.queryByText('Sales')).not.toBeNull()
+    expect(screen.queryByText('Order details')).not.toBeNull()
+    expect(screen.queryByText('Settings')).toBeNull()
+    expect(screen.queryByText('with-children')).toBeNull()
   })
 
   it('supports guards and refresh callbacks', async () => {

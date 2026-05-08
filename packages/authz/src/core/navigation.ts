@@ -27,8 +27,10 @@ type KnownNavigationNodeKeys = {
   title: never
   backHref: never
   direction: never
+  route: never
   name: never
   label: never
+  icon: never
   exact: never
   rightContent: never
 }
@@ -115,11 +117,143 @@ export type AuthzAllowedNavigation<
   >
 }
 
+// Nesting levels are explicit because TypeScript prohibits circular type aliases.
+// Runtime has no depth limit; types only infer correctly up to 4 levels deep.
+type BreadcrumbNodeSource<TNavigation> =
+  | TNavigation[keyof TNavigation]
+  | ChildNode<TNavigation[keyof TNavigation]>
+  | ChildNode<ChildNode<TNavigation[keyof TNavigation]>>
+  | ChildNode<ChildNode<ChildNode<TNavigation[keyof TNavigation]>>>
+
+type NavigationCrumb<T> = Expand<Omit<T, 'children'> & { children?: never }>
+
+export type AuthzNavigationBreadcrumbNode<
+  TRoutes extends AuthzRouteMap,
+  TNavigation extends AuthzNavigationConfig<TRoutes>,
+> =
+  BreadcrumbNodeSource<TNavigation> extends infer TNode
+    ? TNode extends AuthzNavigationNode<TRoutes>
+      ? NavigationCrumb<
+          AuthzAllowedNavigationNode<TRoutes, TNode, BreadcrumbNodeSource<TNavigation>>
+        >
+      : never
+    : never
+
+export type AuthzNavigationBreadcrumb<
+  TRoutes extends AuthzRouteMap,
+  TNavigation extends AuthzNavigationConfig<TRoutes>,
+> = Array<AuthzNavigationBreadcrumbNode<TRoutes, TNavigation>>
+
 export function defineNavigation<
   const TRoutes extends AuthzRouteMap,
   const TNavigation extends AuthzNavigationConfig<TRoutes>,
 >(routes: TRoutes, areas: TNavigation): AuthzNavigationDefinition<TRoutes, TNavigation> {
   return { routes, areas }
+}
+
+function normalizePathname(pathname: string) {
+  const [path = '/'] = pathname.split(/[?#]/)
+  const normalized = path.startsWith('/') ? path : `/${path}`
+
+  if (normalized === '/') {
+    return normalized
+  }
+
+  return normalized.replace(/\/\/+/g, '/').replace(/\/+$/, '')
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[|\\{}()[\]^$+?.*]/g, '\\$&')
+}
+
+function createPathMatcher(path: string, exact: boolean | undefined) {
+  if (path === '*') {
+    return /^.*$/
+  }
+
+  const normalized = normalizePathname(path)
+
+  const tokens = normalized.split('/').filter(Boolean)
+  const pattern =
+    tokens
+      .map((token) => {
+        if (token === ':path*') {
+          return '(?:/.+)?'
+        }
+
+        if (token.startsWith(':')) {
+          return '/[^/]+'
+        }
+
+        return `/${escapeRegex(token)}`
+      })
+      .join('') || '/'
+
+  if (exact) {
+    return new RegExp(`^${pattern}$`)
+  }
+
+  if (pattern === '/') {
+    return /^\/.*$/
+  }
+
+  return new RegExp(`^${pattern}(?:/.*)?$`)
+}
+
+function isActiveNavigationNode(node: Record<string, unknown>, pathname: string) {
+  if (typeof node.href !== 'string') {
+    return false
+  }
+
+  return createPathMatcher(node.href, node.exact === true).test(pathname)
+}
+
+function shouldIncludeBreadcrumbNode(node: Record<string, unknown>) {
+  return (
+    typeof node.href === 'string' ||
+    typeof node.label === 'string' ||
+    typeof node.title === 'string' ||
+    typeof node.name === 'string'
+  )
+}
+
+function getBreadcrumbScore(nodes: readonly Record<string, unknown>[]) {
+  return nodes.reduce((score, node, index) => {
+    const hrefLength = typeof node.href === 'string' ? node.href.length : 0
+    return score + hrefLength + index
+  }, nodes.length)
+}
+
+function getNavigationNodeBreadcrumb(
+  node: Record<string, unknown>,
+  pathname: string
+): Array<Record<string, unknown>> {
+  const childBreadcrumbs = (Array.isArray(node.children) ? node.children : [])
+    .map((child) =>
+      child && typeof child === 'object'
+        ? getNavigationNodeBreadcrumb(child as Record<string, unknown>, pathname)
+        : []
+    )
+    .filter((breadcrumb) => breadcrumb.length > 0)
+    .sort((left, right) => getBreadcrumbScore(right) - getBreadcrumbScore(left))
+
+  const childBreadcrumb = childBreadcrumbs[0]
+  const nodeMatches = isActiveNavigationNode(node, pathname)
+
+  if (!childBreadcrumb && !nodeMatches) {
+    return []
+  }
+
+  return shouldIncludeBreadcrumbNode(node)
+    ? [node, ...(childBreadcrumb ?? [])]
+    : (childBreadcrumb ?? [])
+}
+
+function toNavigationCrumb(node: Record<string, unknown>) {
+  const crumb = { ...node }
+  delete crumb.children
+
+  return crumb
 }
 
 function canAccessNavigationRoute(
@@ -202,4 +336,36 @@ export function getAllowedNavigation<
   })
 
   return Object.fromEntries(entries) as unknown as AuthzAllowedNavigation<TRoutes, TNavigation>
+}
+
+export function getNavigationBreadcrumb<
+  const TRoutes extends AuthzRouteMap,
+  const TNavigation extends AuthzNavigationConfig<TRoutes>,
+>(
+  navigation: AuthzNavigationDefinition<TRoutes, TNavigation>,
+  pathname: string,
+  snapshot?: Pick<AuthzSnapshot, 'roles' | 'permissions'> | null
+): AuthzNavigationBreadcrumb<TRoutes, TNavigation> {
+  const allowedNavigation = getAllowedNavigation(navigation, snapshot)
+  const normalizedPathname = normalizePathname(pathname)
+  const breadcrumbs = Object.values(allowedNavigation)
+    .map((area) => getNavigationNodeBreadcrumb(area, normalizedPathname))
+    .filter((breadcrumb) => breadcrumb.length > 0)
+    .sort((left, right) => getBreadcrumbScore(right) - getBreadcrumbScore(left))
+
+  return (breadcrumbs[0] ?? []).map(toNavigationCrumb) as AuthzNavigationBreadcrumb<
+    TRoutes,
+    TNavigation
+  >
+}
+
+export function getCurrentNavigationNode<
+  const TRoutes extends AuthzRouteMap,
+  const TNavigation extends AuthzNavigationConfig<TRoutes>,
+>(
+  navigation: AuthzNavigationDefinition<TRoutes, TNavigation>,
+  pathname: string,
+  snapshot?: Pick<AuthzSnapshot, 'roles' | 'permissions'> | null
+): AuthzNavigationBreadcrumbNode<TRoutes, TNavigation> | null {
+  return getNavigationBreadcrumb(navigation, pathname, snapshot).at(-1) ?? null
 }

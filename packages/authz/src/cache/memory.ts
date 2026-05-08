@@ -7,6 +7,20 @@ export function memoryCache(options?: { ttl?: number }): AuthzCache {
     return entry.expiresAt != null && entry.expiresAt <= Date.now()
   }
 
+  function purgeExpired() {
+    const now = Date.now()
+    for (const [key, entry] of store) {
+      if (entry.expiresAt != null && entry.expiresAt <= now) {
+        store.delete(key)
+      }
+    }
+  }
+
+  const purgeInterval = setInterval(purgeExpired, 60_000)
+  if (purgeInterval.unref) {
+    purgeInterval.unref()
+  }
+
   return {
     async get<T>(key: string) {
       const entry = store.get(key)

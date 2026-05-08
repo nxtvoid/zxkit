@@ -176,6 +176,8 @@ export const {
   Role,
   useAllowedNavigation,
   useAllowedRoutes,
+  useCurrentNavigationNode,
+  useNavigationBreadcrumb,
   useCan,
   useHasRole,
   useRoles,
@@ -304,6 +306,38 @@ export function Sidebar() {
 }
 ```
 
+Use `useNavigationBreadcrumb(navigation, pathname)` when the UI needs the current navigation trail, and `useCurrentNavigationNode(navigation, pathname)` when it only needs the active item. The hooks filter unauthorized route nodes before matching, so protected entries do not appear in breadcrumbs for users that cannot access them. Non-`exact` navigation nodes match child paths, and `:param` route segments match concrete pathnames. Breadcrumb items are flattened crumbs: they keep useful metadata such as `name`, `label`, `href`, `route`, and `icon`, but do not include nested `children`.
+
+```tsx
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useCurrentNavigationNode, useNavigationBreadcrumb } from './authz-client'
+import { navigation } from './navigation'
+
+export function Breadcrumbs() {
+  const pathname = usePathname()
+  const breadcrumb = useNavigationBreadcrumb(navigation, pathname)
+  const current = useCurrentNavigationNode(navigation, pathname)
+
+  return (
+    <nav aria-label='Breadcrumb'>
+      {breadcrumb.slice(0, -1).map((item) =>
+        item.href ? (
+          <Link key={item.href} href={item.href}>
+            {String(item.name ?? item.label)}
+          </Link>
+        ) : (
+          <span key={String(item.name ?? item.label)}>{String(item.name ?? item.label)}</span>
+        )
+      )}
+      <span>{String(current?.label ?? current?.name ?? '')}</span>
+    </nav>
+  )
+}
+```
+
 ```tsx
 'use client'
 
@@ -395,20 +429,22 @@ This creates `.agents/skills/authz/SKILL.md` at the project root. Use `--dry-run
 
 ### Core Helpers
 
-| Helper                 | Import path           | Description                                   |
-| ---------------------- | --------------------- | --------------------------------------------- |
-| `definePermissions`    | `@zxkit/authz`        | Defines the typed permission catalog          |
-| `createAuthz`          | `@zxkit/authz`        | Creates server authorization helpers          |
-| `createAuthzClient`    | `@zxkit/authz/client` | Creates typed React helpers                   |
-| `defineRoutes`         | `@zxkit/authz`        | Defines typed route metadata                  |
-| `defineNavigation`     | `@zxkit/authz`        | Defines typed navigation trees from routes    |
-| `getAllowedNavigation` | `@zxkit/authz`        | Filters navigation outside React              |
-| `memoryCache`          | `@zxkit/authz`        | Creates an in-memory snapshot cache           |
-| `redisCache`           | `@zxkit/authz`        | Creates a Redis-backed snapshot cache         |
-| `prismaAuthzAdapter`   | `@zxkit/authz/prisma` | Creates the Prisma storage adapter            |
-| `createAuthzProxy`     | `@zxkit/authz/next`   | Creates a Next.js proxy route guard           |
-| `AccessDeniedError`    | `@zxkit/authz`        | Error thrown by `require` and `protect` calls |
-| `createNoopCache`      | `@zxkit/authz`        | Disables cache behavior behind the cache API  |
+| Helper                     | Import path           | Description                                    |
+| -------------------------- | --------------------- | ---------------------------------------------- |
+| `definePermissions`        | `@zxkit/authz`        | Defines the typed permission catalog           |
+| `createAuthz`              | `@zxkit/authz`        | Creates server authorization helpers           |
+| `createAuthzClient`        | `@zxkit/authz/client` | Creates typed React helpers                    |
+| `defineRoutes`             | `@zxkit/authz`        | Defines typed route metadata                   |
+| `defineNavigation`         | `@zxkit/authz`        | Defines typed navigation trees from routes     |
+| `getAllowedNavigation`     | `@zxkit/authz`        | Filters navigation outside React               |
+| `getNavigationBreadcrumb`  | `@zxkit/authz`        | Resolves the allowed breadcrumb for a pathname |
+| `getCurrentNavigationNode` | `@zxkit/authz`        | Resolves the current allowed navigation node   |
+| `memoryCache`              | `@zxkit/authz`        | Creates an in-memory snapshot cache            |
+| `redisCache`               | `@zxkit/authz`        | Creates a Redis-backed snapshot cache          |
+| `prismaAuthzAdapter`       | `@zxkit/authz/prisma` | Creates the Prisma storage adapter             |
+| `createAuthzProxy`         | `@zxkit/authz/next`   | Creates a Next.js proxy route guard            |
+| `AccessDeniedError`        | `@zxkit/authz`        | Error thrown by `require` and `protect` calls  |
+| `createNoopCache`          | `@zxkit/authz`        | Disables cache behavior behind the cache API   |
 
 ### Server Methods
 
@@ -438,20 +474,22 @@ This creates `.agents/skills/authz/SKILL.md` at the project root. Use `--dry-run
 
 ### Client Helpers
 
-| Helper                 | Description                                                |
-| ---------------------- | ---------------------------------------------------------- |
-| `AuthzProvider`        | Provides the current authorization snapshot to React       |
-| `Can`                  | Renders children when permissions match                    |
-| `Guard`                | Renders children when route-style requirements match       |
-| `Role`                 | Renders children when roles match                          |
-| `useCan`               | Checks typed permissions from the current snapshot         |
-| `useAllowedRoutes`     | Filters route definitions by the current snapshot          |
-| `useAllowedNavigation` | Filters typed navigation trees by the current snapshot     |
-| `useCanAccessRoute`    | Checks one route definition from the current snapshot      |
-| `useHasRole`           | Checks roles from the current snapshot                     |
-| `useRoles`             | Returns the current role names                             |
-| `useAuthzSnapshot`     | Returns the full provider snapshot                         |
-| `useAuthzRefresh`      | Updates the provider snapshot when your app gets a new one |
+| Helper                     | Description                                                |
+| -------------------------- | ---------------------------------------------------------- |
+| `AuthzProvider`            | Provides the current authorization snapshot to React       |
+| `Can`                      | Renders children when permissions match                    |
+| `Guard`                    | Renders children when route-style requirements match       |
+| `Role`                     | Renders children when roles match                          |
+| `useCan`                   | Checks typed permissions from the current snapshot         |
+| `useAllowedRoutes`         | Filters route definitions by the current snapshot          |
+| `useAllowedNavigation`     | Filters typed navigation trees by the current snapshot     |
+| `useNavigationBreadcrumb`  | Resolves the allowed breadcrumb for a pathname             |
+| `useCurrentNavigationNode` | Resolves the current allowed navigation node               |
+| `useCanAccessRoute`        | Checks one route definition from the current snapshot      |
+| `useHasRole`               | Checks roles from the current snapshot                     |
+| `useRoles`                 | Returns the current role names                             |
+| `useAuthzSnapshot`         | Returns the full provider snapshot                         |
+| `useAuthzRefresh`          | Updates the provider snapshot when your app gets a new one |
 
 ## Permission Matching
 

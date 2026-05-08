@@ -26,9 +26,13 @@ export { hasMatchingRole } from './roles'
 export { defineRoutes } from './routes'
 export {
   defineNavigation,
+  getCurrentNavigationNode,
   getAllowedNavigation,
+  getNavigationBreadcrumb,
   type AuthzAllowedNavigation,
   type AuthzAllowedNavigationNode,
+  type AuthzNavigationBreadcrumb,
+  type AuthzNavigationBreadcrumbNode,
   type AuthzNavigationConfig,
   type AuthzNavigationDefinition,
   type AuthzNavigationNode,
