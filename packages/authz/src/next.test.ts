@@ -66,6 +66,12 @@ describe('matchesPathname', () => {
     expect(matchesPathname('/orders/:id', '/orders/1')).toBe(true)
     expect(matchesPathname('/orders/:id', '/settings/1')).toBe(false)
   })
+
+  it('treats a literal "*" inside a segment as a literal character', () => {
+    expect(matchesPathname('/foo*', '/foo*')).toBe(true)
+    expect(matchesPathname('/foo*', '/fo')).toBe(false)
+    expect(matchesPathname('/foo*', '/foooo')).toBe(false)
+  })
 })
 
 describe('createAuthzProxy', () => {
@@ -255,6 +261,90 @@ describe('createAuthzProxy', () => {
 
     expect(strictResponse.status).toBe(307)
     expect(strictResponse.headers.get('location')).toBe('https://example.com/hub')
+  })
+
+  it('redirects access-denied errors thrown by a duplicate package copy', async () => {
+    // Simulates the dual-package hazard: an AccessDeniedError created by another
+    // installed copy of @zxkit/authz is not an instance of this copy's class.
+    const foreignAccessDenied = Object.assign(new Error('Authentication required'), {
+      name: 'AccessDeniedError',
+      code: 'UNAUTHORIZED',
+    })
+    const authz = {
+      getSession: async () => null,
+      requireAuth: async () => {
+        throw foreignAccessDenied
+      },
+      requireRoute: async () => {
+        throw foreignAccessDenied
+      },
+    } as unknown as ReturnType<typeof createAuthz>
+    const dashboardRoutes = defineRoutes({
+      dashboard: {
+        path: '/dashboard',
+        label: 'Dashboard',
+      },
+      reports: {
+        path: '/dashboard/reports',
+        label: 'Reports',
+        permissions: { order: ['read'] },
+      },
+    })
+    const proxy = createAuthzProxy({
+      authz,
+      auth: {
+        signIn: '/login',
+        afterSignIn: '/dashboard',
+        forbidden: '/dashboard',
+      },
+      protected: [
+        {
+          matcher: '/dashboard/:path*',
+          routes: dashboardRoutes,
+        },
+      ],
+    })
+
+    const ruleResponse = await proxy(new NextRequest('https://example.com/dashboard/reports'))
+    const unmatchedResponse = await proxy(new NextRequest('https://example.com/dashboard/unknown'))
+
+    expect(ruleResponse.status).toBe(307)
+    expect(ruleResponse.headers.get('location')).toBe('https://example.com/login')
+    expect(unmatchedResponse.status).toBe(307)
+    expect(unmatchedResponse.headers.get('location')).toBe('https://example.com/login')
+  })
+
+  it('rejects redirect targets that resolve as protocol-relative URLs', () => {
+    const dashboardRoutes = defineRoutes({
+      dashboard: {
+        path: '/dashboard',
+        label: 'Dashboard',
+      },
+    })
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter,
+    })
+
+    for (const signIn of ['//evil.com', '/\\evil.com']) {
+      expect(() =>
+        createAuthzProxy({
+          authz,
+          auth: {
+            signIn,
+            afterSignIn: '/dashboard',
+            forbidden: '/dashboard',
+          },
+          protected: [
+            {
+              matcher: '/dashboard/:path*',
+              routes: dashboardRoutes,
+            },
+          ],
+        })
+      ).toThrow(AuthzProxyConfigError)
+    }
   })
 
   it('rejects protected fallback targets that require authorization', () => {

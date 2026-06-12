@@ -51,6 +51,12 @@ export function hasPermissions(owned: PermissionInput, required: PermissionInput
       return true
     }
 
+    // A resource listed with no actions still requires some access to it;
+    // otherwise a typo like `{ order: [] }` would silently grant everyone.
+    if (actions.length === 0) {
+      return ownedActions.length > 0
+    }
+
     return actions.every((action) => ownedActions.includes(action))
   })
 }

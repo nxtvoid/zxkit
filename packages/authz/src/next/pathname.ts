@@ -1,8 +1,8 @@
+import { pathPatternToRegexSource } from '../core/path-pattern'
+
 type PathPattern = string | readonly string[]
 
-function escapeRegex(value: string) {
-  return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&')
-}
+const REGEX_CACHE_LIMIT = 1000
 
 const regexCache = new Map<string, RegExp>()
 
@@ -10,28 +10,11 @@ function patternToRegex(pattern: string) {
   const cached = regexCache.get(pattern)
   if (cached) return cached
 
-  let result: RegExp
+  const result =
+    pattern === '*' ? /^.*$/ : new RegExp(`^${pathPatternToRegexSource(pattern) || '/'}$`)
 
-  if (pattern === '*') {
-    result = /^.*$/
-  } else {
-    const normalized = pattern.startsWith('/') ? pattern : `/${pattern}`
-    const tokens = normalized.split('/').filter(Boolean)
-    const regex = tokens
-      .map((token) => {
-        if (token === ':path*') {
-          return '(?:/.+)?'
-        }
-
-        if (token.startsWith(':')) {
-          return '/[^/]+'
-        }
-
-        return `/${escapeRegex(token)}`
-      })
-      .join('')
-
-    result = new RegExp(`^${regex || '/'}$`)
+  if (regexCache.size >= REGEX_CACHE_LIMIT) {
+    regexCache.clear()
   }
 
   regexCache.set(pattern, result)

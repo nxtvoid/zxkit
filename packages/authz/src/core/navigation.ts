@@ -1,3 +1,4 @@
+import { pathPatternToRegexSource } from './path-pattern'
 import { hasPermissions } from './permissions'
 import { hasMatchingRole } from './roles'
 import type { AuthzRouteMap, AuthzSnapshot, PermissionInput } from './types'
@@ -162,32 +163,12 @@ function normalizePathname(pathname: string) {
   return normalized.replace(/\/\/+/g, '/').replace(/\/+$/, '')
 }
 
-function escapeRegex(value: string) {
-  return value.replace(/[|\\{}()[\]^$+?.*]/g, '\\$&')
-}
-
 function createPathMatcher(path: string, exact: boolean | undefined) {
   if (path === '*') {
     return /^.*$/
   }
 
-  const normalized = normalizePathname(path)
-
-  const tokens = normalized.split('/').filter(Boolean)
-  const pattern =
-    tokens
-      .map((token) => {
-        if (token === ':path*') {
-          return '(?:/.+)?'
-        }
-
-        if (token.startsWith(':')) {
-          return '/[^/]+'
-        }
-
-        return `/${escapeRegex(token)}`
-      })
-      .join('') || '/'
+  const pattern = pathPatternToRegexSource(normalizePathname(path)) || '/'
 
   if (exact) {
     return new RegExp(`^${pattern}$`)

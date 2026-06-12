@@ -149,8 +149,13 @@ describe('createAuthz', () => {
     })
     expect(adapter.getUserRoles).toHaveBeenCalledTimes(2)
 
-    await authz.updateRole('role-orders-manager', {
-      permissions: { order: ['read'] },
+    await expect(
+      authz.updateRole('role-orders-manager', {
+        permissions: { order: ['read'] },
+      })
+    ).resolves.toMatchObject({
+      success: true,
+      role: { id: 'role-orders-manager' },
     })
 
     expect(adapter.listUserIdsByRole).toHaveBeenCalledWith('role-orders-manager')
@@ -258,6 +263,74 @@ describe('createAuthz', () => {
     expect(cache.delete).toHaveBeenCalledWith('authz:user:user-1:snapshot')
   })
 
+  it('reports missing roles on update and delete without throwing', async () => {
+    const adapter = createAdapter()
+    const notFound = () => {
+      throw Object.assign(new Error('Record to update not found.'), { code: 'P2025' })
+    }
+    adapter.updateRole = vi.fn(notFound)
+    adapter.deleteRole = vi.fn(notFound)
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter,
+    })
+
+    await expect(authz.updateRole('missing-role', { name: 'renamed' })).resolves.toMatchObject({
+      success: false,
+      code: 'ROLE_NOT_FOUND',
+      role: null,
+    })
+    await expect(authz.deleteRole('missing-role')).resolves.toMatchObject({
+      success: false,
+      code: 'ROLE_NOT_FOUND',
+    })
+  })
+
+  it('reports role renames that collide with an existing role name', async () => {
+    const adapter = createAdapter()
+    adapter.updateRole = vi.fn(async () => {
+      throw Object.assign(new Error('Unique constraint failed on the fields: (`name`)'), {
+        code: 'P2002',
+        meta: { target: ['name'] },
+      })
+    })
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter,
+    })
+
+    await expect(authz.updateRole('role-orders-manager', { name: 'admin' })).resolves.toMatchObject(
+      {
+        success: false,
+        code: 'ROLE_ALREADY_EXISTS',
+      }
+    )
+  })
+
+  it('does not report unrelated unique violations as duplicate assignments', async () => {
+    const adapter = createAdapter()
+    adapter.assignRole = vi.fn(async () => {
+      throw Object.assign(new Error('Unique constraint failed on the fields: (`email`)'), {
+        code: 'P2002',
+        meta: { target: ['email'] },
+      })
+    })
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter,
+    })
+
+    await expect(
+      authz.assignRole({ userId: 'user-1', roleId: 'role-orders-manager' })
+    ).resolves.toMatchObject({
+      success: false,
+      code: 'ROLE_ASSIGNMENT_FAILED',
+    })
+  })
+
   it('invalidates cached users when deleting a role with cascading assignments', async () => {
     const storedRoles = new Map<string, AuthzRole>([
       [
@@ -311,7 +384,10 @@ describe('createAuthz', () => {
     })
 
     await expect(authz.hasRole('admin')).resolves.toBe(true)
-    await authz.deleteRole('role-admin')
+    await expect(authz.deleteRole('role-admin')).resolves.toMatchObject({
+      success: true,
+      message: 'Role "role-admin" deleted.',
+    })
 
     await expect(authz.hasRole('admin')).resolves.toBe(false)
     expect(adapter.getUserRoles).toHaveBeenCalledTimes(2)

@@ -23,7 +23,9 @@ function assertInternalPath(name: string, path: string | undefined) {
     return
   }
 
-  if (!path.startsWith('/') || path.startsWith('//')) {
+  // Reject "//" and "/\" prefixes: URL resolution treats both as protocol-relative,
+  // turning the redirect target into an external host.
+  if (!path.startsWith('/') || path.startsWith('//') || path.startsWith('/\\')) {
     throw new AuthzProxyConfigError(`${name} must be an internal path starting with "/".`)
   }
 }

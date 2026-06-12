@@ -51,7 +51,7 @@ async function handleRule(input: {
     await requireRuleAccess(input.authz, input.rule)
     return NextResponse.next()
   } catch (error) {
-    if (!(error instanceof AccessDeniedError)) {
+    if (!AccessDeniedError.is(error)) {
       throw error
     }
 
@@ -89,7 +89,7 @@ async function handleProtectedZone(input: {
   try {
     await input.authz.requireAuth()
   } catch (error) {
-    if (!(error instanceof AccessDeniedError)) {
+    if (!AccessDeniedError.is(error)) {
       throw error
     }
 

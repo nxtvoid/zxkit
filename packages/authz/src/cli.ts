@@ -20,6 +20,7 @@ Use this skill when the task involves the \`@zxkit/authz\` package.
 - Do not import \`Can\`, \`Guard\`, \`AuthzProvider\`, or hooks directly from \`@zxkit/authz/client\` in app code. Import them from the local typed \`authz-client.ts\`.
 - Use \`authz.assignRole\`, \`authz.removeRole\`, \`authz.updateRole\`, and \`authz.deleteRole\` for mutations so cache invalidation runs.
 - Use \`redisCache(redis, { ttl })\` for Upstash Redis. Do not wrap Upstash values with manual \`JSON.parse\` or \`JSON.stringify\`.
+- Catch guard errors with \`AccessDeniedError.is(error)\`, never \`error instanceof AccessDeniedError\`: duplicate installed copies of the package break \`instanceof\` across copies.
 
 Recommended file layout:
 
@@ -182,7 +183,7 @@ await authz.updateRole(created.role.id, { permissions: { order: ['read'] } })
 await authz.deleteRole(created.role.id)
 \`\`\`
 
-\`createRole\` returns \`{ success, message, role }\` instead of leaking unique constraint errors. If a role name already exists, \`success\` is \`false\` and \`role\` contains the existing role when it can be found. \`assignRole\` returns \`{ success, message }\` and invalidates the assigned user's cached snapshot.
+\`createRole\` returns \`{ success, message, role }\` instead of leaking unique constraint errors. If a role name already exists, \`success\` is \`false\` and \`role\` contains the existing role when it can be found. \`assignRole\` returns \`{ success, message }\` and invalidates the assigned user's cached snapshot. \`updateRole\` returns \`{ success, message, code?, role }\`; \`deleteRole\` and \`removeRole\` return \`{ success, message, code? }\`. Role mutations do not throw on expected failures: missing roles report \`ROLE_NOT_FOUND\`, duplicate names report \`ROLE_ALREADY_EXISTS\`.
 
 Use result checks instead of assuming mutations throw:
 
@@ -568,6 +569,7 @@ In consumer apps, validate the actual protected flow:
 
 ## Troubleshooting
 
+- Proxy returns 500 with \`AccessDeniedError: Authentication required\` instead of redirecting: two copies of \`@zxkit/authz\` are installed (check the lockfile or \`node_modules\`). Upgrade to a version with \`AccessDeniedError.is\`, and dedupe so the proxy and the \`createAuthz\` helper resolve the same copy.
 - \`createAuthzClient\` server error: the local file that calls \`createAuthzClient(permissions)\` is missing \`'use client'\`.
 - Missing TypeScript autocomplete: import \`Can\`, \`Guard\`, and hooks from the local typed \`authz-client.ts\`, not directly from \`@zxkit/authz/client\`.
 - Wrong permission accepted by TS: make sure the same \`permissions\` catalog is passed to both \`createAuthz({ permissions, ... })\` and \`createAuthzClient(permissions)\`.

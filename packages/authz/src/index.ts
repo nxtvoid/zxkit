@@ -40,6 +40,7 @@ export {
 export { SNAPSHOT_NAMESPACE, createSnapshot, createSnapshotKey } from './core/snapshot'
 export { createNoopCache } from './cache/noop'
 export { memoryCache } from './cache/memory'
+export type { MemoryCache } from './cache/memory'
 export { redisCache } from './cache/redis'
 export type { RedisCacheClient, RedisCacheOptions } from './cache/redis'
 export { AccessDeniedError, createAuthz } from './server'
