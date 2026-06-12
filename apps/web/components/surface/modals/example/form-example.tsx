@@ -41,7 +41,7 @@ const FormModalExample = () => {
   function onSubmit(values: formData) {
     console.log('Form submitted with values:', values)
 
-    toast.success('Form submitted successfully!', {
+    toast.success('Post created', {
       description: 'Check the console to see the submitted values.',
     })
   }
@@ -49,9 +49,10 @@ const FormModalExample = () => {
   return (
     <DynamicContent>
       <DialogHeader>
-        <DialogTitle>Form Modal Example</DialogTitle>
+        <DialogTitle>Preserved form</DialogTitle>
         <DialogDescription>
-          This modal is rendered dynamically when you push it using the pushModal function.
+          A react-hook-form instance that survives the dialog ↔ drawer swap, validation state
+          included.
         </DialogDescription>
       </DialogHeader>
       <div className='text-muted-foreground mt-4 min-h-80 text-sm'>
@@ -66,9 +67,7 @@ const FormModalExample = () => {
                   <FormControl>
                     <Input placeholder='e.g., My Blog' autoComplete='off' {...field} />
                   </FormControl>
-                  <FormDescription>
-                    The title of your post. Must be between 5 and 100 characters.
-                  </FormDescription>
+                  <FormDescription>Between 5 and 100 characters.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -86,16 +85,14 @@ const FormModalExample = () => {
                       {...field}
                     />
                   </FormControl>
-                  <FormDescription>
-                    The description of your post. Must be between 10 and 500 characters.
-                  </FormDescription>
+                  <FormDescription>Between 10 and 500 characters.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
             <Button type='submit' className='w-full' disabled={!form.formState.isDirty}>
-              Create Post
+              Create post
             </Button>
           </form>
         </Form>
