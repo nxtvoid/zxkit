@@ -1,6 +1,11 @@
 import type { AuthzCache } from '../core/types'
 
-export function memoryCache(options?: { ttl?: number }): AuthzCache {
+export type MemoryCache = AuthzCache & {
+  /** Stops the background purge timer and clears all entries. */
+  dispose: () => void
+}
+
+export function memoryCache(options?: { ttl?: number }): MemoryCache {
   const store = new Map<string, { value: unknown; expiresAt: number | null }>()
 
   function isExpired(entry: { expiresAt: number | null }) {
@@ -57,6 +62,10 @@ export function memoryCache(options?: { ttl?: number }): AuthzCache {
           store.delete(key)
         }
       }
+    },
+    dispose() {
+      clearInterval(purgeInterval)
+      store.clear()
     },
   }
 }

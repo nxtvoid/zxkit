@@ -31,4 +31,19 @@ describe('memoryCache', () => {
     await expect(cache.get('authz:user:2:snapshot')).resolves.toBeNull()
     await expect(cache.get('other')).resolves.toBe(3)
   })
+
+  it('stops purging and clears entries on dispose', async () => {
+    vi.useFakeTimers()
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
+    const cache = memoryCache()
+
+    await cache.set('key', 1)
+    cache.dispose()
+
+    await expect(cache.get('key')).resolves.toBeNull()
+    expect(clearIntervalSpy).toHaveBeenCalled()
+
+    clearIntervalSpy.mockRestore()
+    vi.useRealTimers()
+  })
 })

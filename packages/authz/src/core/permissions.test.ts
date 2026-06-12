@@ -35,4 +35,12 @@ describe('permissions', () => {
     expect(hasPermissions({}, undefined)).toBe(true)
     expect(hasPermissions({}, {})).toBe(true)
   })
+
+  it('requires some access when a resource is listed without actions', () => {
+    expect(hasPermissions({}, { order: [] })).toBe(false)
+    expect(hasPermissions({ order: [] }, { order: [] })).toBe(false)
+    expect(hasPermissions({ order: ['read'] }, { order: [] })).toBe(true)
+    expect(hasPermissions({ order: ['*'] }, { order: [] })).toBe(true)
+    expect(hasPermissions({ '*': ['*'] }, { order: [] })).toBe(true)
+  })
 })

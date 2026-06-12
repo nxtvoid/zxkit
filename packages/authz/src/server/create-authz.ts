@@ -24,6 +24,12 @@ type CreateAuthzOptions<TUser extends AuthzUser, TPermissions extends Permission
   adapter: AuthzAdapter<TUser>
   cache?: AuthzCache | false
   cacheTtl?: number
+  /**
+   * Milliseconds before a cache operation is treated as failed. Reads and
+   * writes that time out degrade to a cache miss; invalidations that time out
+   * are reported as CACHE_INVALIDATION_FAILED. Off by default.
+   */
+  cacheTimeoutMs?: number
 }
 
 type GuardOptions = {
@@ -71,6 +77,100 @@ function isUniqueConstraintError(error: unknown, field?: string) {
   return errorTargetIncludes(error, field)
 }
 
+function isRecordNotFoundError(error: unknown) {
+  return getErrorCode(error) === 'P2025' || /not found/i.test(getErrorMessage(error))
+}
+
+function hasErrorTarget(error: unknown) {
+  return isRecord(error) && isRecord(error.meta) && error.meta.target != null
+}
+
+// Unique violations that name a constraint outside the user-role assignment
+// (e.g. raised by a trigger) must not be reported as "already assigned".
+function isAssignmentConflictError(error: unknown) {
+  if (!isUniqueConstraintError(error)) {
+    return false
+  }
+
+  if (!hasErrorTarget(error)) {
+    return true
+  }
+
+  return errorTargetIncludes(error, 'userId') || errorTargetIncludes(error, 'roleId')
+}
+
+const CACHE_ERROR_LOG_INTERVAL_MS = 60_000
+
+// Reads and writes degrade to a cache miss when the cache backend is down
+// (e.g. Redis unreachable or over quota) so authorization keeps resolving
+// through the adapter instead of crashing every guarded request. Deletes are
+// NOT wrapped: a swallowed invalidation could serve stale permissions once the
+// backend recovers, so those failures keep surfacing as CACHE_INVALIDATION_FAILED.
+function createResilientCache(cache: AuthzCache, timeoutMs?: number): AuthzCache {
+  let lastLoggedAt = 0
+
+  function logCacheError(operation: 'read' | 'write', error: unknown) {
+    const now = Date.now()
+
+    if (now - lastLoggedAt < CACHE_ERROR_LOG_INTERVAL_MS) {
+      return
+    }
+
+    lastLoggedAt = now
+    console.error(
+      `Authz cache ${operation} failed; continuing without cache until it recovers:`,
+      error
+    )
+  }
+
+  async function withTimeout<T>(operation: Awaitable<T>): Promise<T> {
+    if (!timeoutMs) {
+      return operation
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Authz cache operation timed out after ${timeoutMs}ms`)),
+            timeoutMs
+          )
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  return {
+    async get<T>(key: string) {
+      try {
+        return await withTimeout(cache.get<T>(key))
+      } catch (error) {
+        logCacheError('read', error)
+        return null
+      }
+    },
+    async set<T>(key: string, value: T, options?: { ttl?: number }) {
+      try {
+        await withTimeout(cache.set(key, value, options))
+      } catch (error) {
+        logCacheError('write', error)
+      }
+    },
+    delete: (key) => withTimeout(cache.delete(key)),
+    ...(cache.deleteMany
+      ? { deleteMany: (keys: string[]) => withTimeout(cache.deleteMany!(keys)) }
+      : {}),
+    ...(cache.clearNamespace
+      ? { clearNamespace: (namespace: string) => withTimeout(cache.clearNamespace!(namespace)) }
+      : {}),
+  }
+}
+
 function roleResult(
   input: Omit<AuthzRoleResult, 'role'> & { role?: AuthzRole | null }
 ): AuthzRoleResult {
@@ -90,7 +190,10 @@ export function createAuthz<
 >(options: CreateAuthzOptions<TUser, TPermissions>) {
   void options.permissions
 
-  const cache = options.cache === false ? createNoopCache() : (options.cache ?? createNoopCache())
+  const cache = createResilientCache(
+    options.cache === false ? createNoopCache() : (options.cache ?? createNoopCache()),
+    options.cacheTimeoutMs
+  )
   const cacheSetOptions = options.cacheTtl ? { ttl: options.cacheTtl } : undefined
   const inFlight = new Map<string, Promise<AuthzSnapshot<TUser>>>()
 
@@ -332,11 +435,39 @@ export function createAuthz<
       description?: string | null
       permissions?: PermissionRequirement<TPermissions>
     }
-  ) {
-    const role = await options.adapter.updateRole(roleId, {
-      ...input,
-      permissions: input.permissions as PermissionInput | undefined,
-    })
+  ): Promise<AuthzRoleResult> {
+    let role: AuthzRole
+
+    try {
+      role = await options.adapter.updateRole(roleId, {
+        ...input,
+        permissions: input.permissions as PermissionInput | undefined,
+      })
+    } catch (error) {
+      if (input.name && isUniqueConstraintError(error, 'name')) {
+        return roleResult({
+          success: false,
+          code: 'ROLE_ALREADY_EXISTS',
+          message: `Role name "${input.name}" is already in use.`,
+        })
+      }
+
+      if (isRecordNotFoundError(error)) {
+        return roleResult({
+          success: false,
+          code: 'ROLE_NOT_FOUND',
+          message: `Role "${roleId}" was not found.`,
+        })
+      }
+
+      console.error(`Could not update role "${roleId}":`, error)
+
+      return roleResult({
+        success: false,
+        code: 'ROLE_UPDATE_FAILED',
+        message: `Could not update role "${roleId}".`,
+      })
+    }
 
     try {
       await invalidateRole(roleId)
@@ -344,17 +475,48 @@ export function createAuthz<
       console.warn(
         `Role "${roleId}" updated, but cache invalidation failed: ${getErrorMessage(error)}`
       )
+
+      return roleResult({
+        success: false,
+        code: 'CACHE_INVALIDATION_FAILED',
+        message: `Role "${role.name}" updated, but cached snapshots could not be invalidated.`,
+        role,
+      })
     }
 
-    return role
+    return roleResult({
+      success: true,
+      message: `Role "${role.name}" updated.`,
+      role,
+    })
   }
 
-  async function deleteRole(roleId: string) {
-    const userIds = options.adapter.listUserIdsByRole
-      ? await options.adapter.listUserIdsByRole(roleId)
-      : null
+  async function deleteRole(roleId: string): Promise<AuthzMutationResult> {
+    let userIds: string[] | null
 
-    await options.adapter.deleteRole(roleId)
+    try {
+      userIds = options.adapter.listUserIdsByRole
+        ? [...(await options.adapter.listUserIdsByRole(roleId))]
+        : null
+
+      await options.adapter.deleteRole(roleId)
+    } catch (error) {
+      if (isRecordNotFoundError(error)) {
+        return mutationResult({
+          success: false,
+          code: 'ROLE_NOT_FOUND',
+          message: `Role "${roleId}" was not found.`,
+        })
+      }
+
+      console.error(`Could not delete role "${roleId}":`, error)
+
+      return mutationResult({
+        success: false,
+        code: 'ROLE_DELETE_FAILED',
+        message: `Could not delete role "${roleId}".`,
+      })
+    }
 
     try {
       if (userIds) {
@@ -366,7 +528,18 @@ export function createAuthz<
       console.warn(
         `Role "${roleId}" deleted, but cache invalidation failed: ${getErrorMessage(error)}`
       )
+
+      return mutationResult({
+        success: false,
+        code: 'CACHE_INVALIDATION_FAILED',
+        message: `Role "${roleId}" deleted, but cached snapshots could not be invalidated.`,
+      })
     }
+
+    return mutationResult({
+      success: true,
+      message: `Role "${roleId}" deleted.`,
+    })
   }
 
   async function finishUserRoleMutation(
@@ -398,7 +571,7 @@ export function createAuthz<
       await options.adapter.assignRole(input)
       return finishUserRoleMutation(input.userId, `Role "${input.roleId}" assigned.`)
     } catch (error) {
-      if (isUniqueConstraintError(error)) {
+      if (isAssignmentConflictError(error)) {
         await invalidateUser(input.userId).catch(() => undefined)
 
         return mutationResult({

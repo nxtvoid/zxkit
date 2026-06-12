@@ -136,6 +136,22 @@ const snapshot = await authz.getSnapshot()
 const canExportInvoices = await authz.can({ invoice: ['export'] })
 ```
 
+Guards throw `AccessDeniedError` with a `code` of `'UNAUTHORIZED'` (no session) or `'FORBIDDEN'` (missing permissions or roles). When catching it, use `AccessDeniedError.is(error)` instead of `instanceof`: package managers can install duplicate copies of this package (for example when workspaces resolve different peer dependencies), and an error thrown by one copy is not an `instanceof` the other copy's class. `AccessDeniedError.is` also matches errors from a duplicate copy.
+
+```ts
+import { AccessDeniedError } from '@zxkit/authz'
+
+try {
+  await authz.require({ settings: ['manage'] })
+} catch (error) {
+  if (AccessDeniedError.is(error)) {
+    return { error: error.code === 'UNAUTHORIZED' ? 'Sign in first.' : 'No access.' }
+  }
+
+  throw error
+}
+```
+
 ### Manage Roles
 
 Role creation returns a controlled result, so duplicate role names do not leak database errors.
@@ -156,6 +172,24 @@ if (created.success && created.role) {
 ```
 
 `assignRole` invalidates the assigned user's cached snapshot. `updateRole` and `deleteRole` invalidate affected users too.
+
+Every role mutation returns a result object instead of throwing on expected failures. `createRole` and `updateRole` return `{ success, message, code?, role }`; `deleteRole`, `assignRole`, and `removeRole` return `{ success, message, code? }`. Check `success` (and `code` when you need to branch) instead of wrapping mutations in `try/catch`:
+
+```ts
+const updated = await authz.updateRole(roleId, { permissions: { order: ['read'] } })
+
+if (!updated.success) {
+  // updated.code: 'ROLE_NOT_FOUND' | 'ROLE_ALREADY_EXISTS' | 'ROLE_UPDATE_FAILED' | 'CACHE_INVALIDATION_FAILED'
+  return { error: updated.message }
+}
+
+const deleted = await authz.deleteRole(roleId)
+
+if (!deleted.success) {
+  // deleted.code: 'ROLE_NOT_FOUND' | 'ROLE_DELETE_FAILED' | 'CACHE_INVALIDATION_FAILED'
+  return { error: deleted.message }
+}
+```
 
 ### Create Typed Client Helpers
 
@@ -415,6 +449,24 @@ Session expiration does not delete a cached snapshot by itself. This is not used
 
 With `@upstash/redis`, do not `JSON.parse` manually in a custom cache adapter. Upstash deserializes values by default.
 
+#### Cache Outages
+
+A failing cache backend (Redis unreachable, free-tier quota exceeded, network issues) does not take the app down. Cache reads and writes degrade to a cache miss: snapshots resolve directly through the adapter on every request, and the failure is logged to the console (throttled to once per minute) so you can fix the backend whenever you want. Expect higher database load while the cache is down.
+
+Errors are detected automatically. A backend that hangs instead of failing is only covered when you set `cacheTimeoutMs`; operations that exceed it count as failures:
+
+```ts
+export const authz = createAuthz({
+  permissions,
+  getSession,
+  adapter,
+  cache: redisCache(redis, { ttl: 60 * 30 }),
+  cacheTimeoutMs: 2000,
+})
+```
+
+Invalidation failures are the exception: they are reported instead of swallowed, because a snapshot that was never deleted could serve stale permissions once the backend recovers. Role mutations return `success: false` with `code: 'CACHE_INVALIDATION_FAILED'` in that case, and direct `invalidateUser()` / `invalidateUsers()` / `invalidateRole()` calls reject. After a cache outage that overlapped role mutations, clear the affected snapshot keys (or flush the `authz:user:` namespace) before trusting cached values again.
+
 ### Generate The AI Skill
 
 Generate a local Codex skill for this package in a consumer project:
@@ -464,8 +516,8 @@ This creates `.agents/skills/authz/SKILL.md` at the project root. Use `--dry-run
 | `protectAuth(...)`  | Wraps a handler with an auth-only check                        |
 | `listRoles()`       | Lists all stored roles                                         |
 | `createRole()`      | Creates a role and returns `{ success, message, role }`        |
-| `updateRole()`      | Updates a role and invalidates affected snapshots              |
-| `deleteRole()`      | Deletes a role and invalidates affected snapshots              |
+| `updateRole()`      | Updates a role, invalidates snapshots, returns a result object |
+| `deleteRole()`      | Deletes a role, invalidates snapshots, returns a result object |
 | `assignRole()`      | Assigns a role and invalidates that user's snapshot            |
 | `removeRole()`      | Removes a role assignment and invalidates that user's snapshot |
 | `invalidateUser()`  | Deletes one user's cached snapshot                             |
