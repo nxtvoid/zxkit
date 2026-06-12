@@ -1,104 +1,91 @@
-import { CodeBlock } from './code-block'
-import {
-  clientExample,
-  flow,
-  permissionExample,
-  roleExample,
-  serverExample,
-  useCases,
-} from './content'
+import { CodeBlock } from '@zxkit/ui/code-block'
+import { CopyButton } from '@zxkit/ui/copy-button'
+import { clientExample, features, permissionExample, proxyExample, serverExample } from './content'
+
+const sections = [
+  {
+    label: 'Define once',
+    title: 'permissions.ts',
+    description: 'One catalog of resources and actions. Everything else is typed from it.',
+    code: permissionExample,
+  },
+  {
+    label: 'Server',
+    title: 'authz.ts',
+    description: 'Session, adapter, and cache in one helper. protect wraps any server action.',
+    code: serverExample,
+  },
+  {
+    label: 'Client',
+    title: 'authz-client.ts',
+    description: 'Typed guards and hooks. No fetching — they read the snapshot you already loaded.',
+    code: clientExample,
+  },
+  {
+    label: 'Routes',
+    title: 'proxy.ts',
+    description: 'The same route definitions protect the whole app before anything renders.',
+    code: proxyExample,
+  },
+]
 
 export function AuthzView() {
   return (
-    <div className='min-h-[calc(100vh-7rem)]'>
-      <section className='border-border grid gap-8 border-b px-5 py-10 md:px-8 md:py-14 lg:grid-cols-[0.92fr_1.08fr]'>
-        <div className='flex flex-col justify-center'>
-          <p className='text-primary text-sm font-medium'>@zxkit/authz</p>
-          <h1 className='mt-4 max-w-3xl text-4xl font-semibold tracking-normal text-balance md:text-6xl'>
-            Typed authorization for roles, permissions, and routes.
-          </h1>
-          <p className='text-muted-foreground mt-5 max-w-2xl text-base leading-7 md:text-lg'>
-            Use it when your app already has authentication, but still needs to decide what each
-            user can see or run without duplicating rules across the server, client, Prisma, and the
-            Next.js proxy.
-          </p>
-        </div>
+    <div className='mx-auto w-full max-w-2xl px-1 py-14 md:py-20'>
+      <header>
+        <p className='text-muted-foreground font-mono text-sm'>@zxkit/authz</p>
+        <h1 className='mt-3 text-3xl font-semibold tracking-tight text-balance md:text-4xl'>
+          Typed authorization for roles, permissions, and routes.
+        </h1>
+        <p className='text-muted-foreground mt-4 text-base leading-7'>
+          Your app already knows who the user is. This decides what they can see and run — once,
+          with the same types on the server, the client, and the Next.js proxy.
+        </p>
 
-        <div className='border-border bg-card flex flex-col gap-3 border p-4'>
-          <div className='border-border flex h-fit items-center justify-between border-b pb-3'>
-            <span className='text-primary text-sm font-medium'>permissions.ts</span>
-            <span className='text-muted-foreground text-xs'>source of truth</span>
+        <div className='mt-8 flex flex-wrap items-center gap-x-6 gap-y-3'>
+          <span className='bg-muted/30 inline-flex items-center gap-1 rounded-lg py-1 pr-1 pl-3'>
+            <code className='font-mono text-sm'>bun add @zxkit/authz</code>
+            <CopyButton value='bun add @zxkit/authz' />
+          </span>
+          <a
+            className='text-muted-foreground hover:text-foreground text-sm underline underline-offset-4 transition-colors'
+            href='https://github.com/nxtvoid/zxkit/tree/main/packages/authz#readme'
+            target='_blank'
+            rel='noopener noreferrer'
+          >
+            Documentation
+          </a>
+          <a
+            className='text-muted-foreground hover:text-foreground text-sm underline underline-offset-4 transition-colors'
+            href='https://www.npmjs.com/package/@zxkit/authz'
+            target='_blank'
+            rel='noopener noreferrer'
+          >
+            npm
+          </a>
+        </div>
+      </header>
+
+      {sections.map((section) => (
+        <section key={section.title} className='border-border mt-14 border-t pt-10'>
+          <p className='text-muted-foreground font-mono text-xs uppercase'>{section.label}</p>
+          <h2 className='mt-2 font-mono text-sm font-medium'>{section.title}</h2>
+          <p className='text-muted-foreground mt-2 text-sm leading-6'>{section.description}</p>
+          <div className='mt-4'>
+            <CodeBlock code={section.code} />
           </div>
-          <CodeBlock code={permissionExample} />
-        </div>
-      </section>
+        </section>
+      ))}
 
-      <section className='px-5 py-10 md:px-8'>
-        <div className='mb-6 flex flex-col gap-2'>
-          <p className='text-primary text-sm font-medium'>What it solves</p>
-          <h2 className='text-2xl font-semibold tracking-normal md:text-3xl'>
-            One access model for the whole app.
-          </h2>
-        </div>
-
-        <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-3'>
-          {useCases.map((item) => {
-            const Icon = item.icon
-
-            return (
-              <article key={item.title} className='border-border bg-card border p-4'>
-                <Icon className='text-primary mb-4 size-5' aria-hidden='true' />
-                <h3 className='text-lg font-semibold tracking-normal'>{item.title}</h3>
-                <p className='text-secondary-foreground mt-2 text-sm leading-6'>
-                  {item.description}
-                </p>
-              </article>
-            )
-          })}
-        </div>
-      </section>
-
-      <section className='border-border grid gap-5 border-y px-5 py-10 md:grid-cols-2 md:px-8'>
-        <div>
-          <p className='text-primary mb-3 text-sm font-medium'>Server</p>
-          <CodeBlock code={serverExample} />
-        </div>
-        <div>
-          <p className='text-primary mb-3 text-sm font-medium'>Client</p>
-          <CodeBlock code={clientExample} />
-        </div>
-      </section>
-
-      <section className='grid gap-8 px-5 py-10 md:px-8 lg:grid-cols-[0.9fr_1.1fr]'>
-        <div>
-          <p className='text-primary text-sm font-medium'>How it works</p>
-          <h2 className='mt-3 text-2xl font-semibold tracking-normal md:text-3xl'>
-            The usual flow is small.
-          </h2>
-          <ol className='mt-6 grid gap-3'>
-            {flow.map((item, index) => (
-              <li key={item} className='border-border bg-sidebar flex gap-3 border p-4'>
-                <span className='bg-primary text-accent flex size-7 shrink-0 items-center justify-center text-sm font-semibold'>
-                  {index + 1}
-                </span>
-                <span className='text-muted-foreground text-sm leading-6'>{item}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-
-        <div>
-          <p className='text-primary mb-3 text-sm font-medium'>Roles</p>
-          <CodeBlock code={roleExample} />
-          <p className='text-secondary-foreground mt-4 text-sm leading-6'>
-            Creating or assigning roles returns a controlled result. If something already exists,
-            you get
-            <code className='bg-sidebar text-secondary-foreground mx-1 px-1 py-0.5'>
-              success: false
-            </code>
-            instead of a raw database error.
-          </p>
-        </div>
+      <section className='border-border mt-14 border-t pt-10'>
+        <dl className='grid gap-5'>
+          {features.map((feature) => (
+            <div key={feature.title} className='grid gap-1 sm:grid-cols-[11rem_1fr] sm:gap-4'>
+              <dt className='text-sm font-medium'>{feature.title}</dt>
+              <dd className='text-muted-foreground text-sm leading-6'>{feature.description}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
     </div>
   )
