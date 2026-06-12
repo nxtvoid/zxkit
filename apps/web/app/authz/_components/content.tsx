@@ -1,5 +1,3 @@
-import { Code2, Database, GitBranch, RefreshCw, Route, ShieldCheck } from 'lucide-react'
-
 export const permissionExample = `import { definePermissions } from '@zxkit/authz'
 
 export const permissions = definePermissions({
@@ -30,64 +28,38 @@ export const clientExample = `'use client'
 import { createAuthzClient } from '@zxkit/authz/client'
 import { permissions } from './permissions'
 
-export const authzClient = createAuthzClient(permissions)
-export const { AuthzProvider, Can, Guard, useCan } = authzClient`
+export const { AuthzProvider, Can, Guard, useCan } =
+  createAuthzClient(permissions)`
 
-export const roleExample = `const created = await authz.createRole({
-  name: 'orders_manager',
-  label: 'Orders manager',
-  permissions: { order: ['read', 'update'] },
-})
+export const proxyExample = `import { createAuthzProxy } from '@zxkit/authz/next'
 
-if (created.success && created.role) {
-  await authz.assignRole({
-    userId,
-    roleId: created.role.id,
-  })
-}`
+export const proxy = createAuthzProxy({
+  authz,
+  auth: { signIn: '/login', afterSignIn: '/hub', forbidden: '/hub' },
+  public: ['/'],
+  guestOnly: ['/login'],
+  protected: [{ matcher: '/hub/:path*', routes }],
+})`
 
-export const useCases = [
+export const features = [
   {
     title: 'Typed permissions',
-    description:
-      'Define resources and actions once. TypeScript completes order, invoice, settings, and rejects actions that do not exist.',
-    icon: Code2,
+    description: 'Resources and actions autocomplete. Invalid ones fail to compile.',
   },
   {
-    title: 'Database roles',
-    description:
-      'Store roles and assignments in Prisma. The permission catalog stays in code while user access changes in the database.',
-    icon: Database,
+    title: 'Roles in your database',
+    description: 'The catalog lives in code; roles and assignments live in Prisma.',
   },
   {
-    title: 'UI guards',
-    description:
-      'Use Can, Guard, and hooks from a typed client helper to hide actions without fetching again.',
-    icon: ShieldCheck,
+    title: 'Guards everywhere',
+    description: 'Can, Guard, and hooks on the client. require and protect on the server.',
   },
   {
-    title: 'Protected routes',
-    description:
-      'Reuse the same requirements for sidebars, server checks, and the Next.js proxy before rendering.',
-    icon: Route,
+    title: 'Next.js proxy',
+    description: 'Protected zones, guest-only and public routes from the same definitions.',
   },
   {
-    title: 'Invalidated cache',
-    description:
-      'Cache per-user snapshots with memory or Redis. Package mutations clear the affected snapshots.',
-    icon: RefreshCw,
+    title: 'Cached snapshots',
+    description: 'Memory or Redis, invalidated on role mutations, resilient to outages.',
   },
-  {
-    title: 'Complete flow',
-    description:
-      'Protect server actions, create roles, assign users, and refresh the UI when permissions change.',
-    icon: GitBranch,
-  },
-]
-
-export const flow = [
-  'Define the permission catalog with definePermissions.',
-  'Create authz on the server with session, adapter, and cache.',
-  'Load a snapshot and pass it to AuthzProvider.',
-  'Use Can, Guard, useCan, require, and protect with the same types.',
 ]

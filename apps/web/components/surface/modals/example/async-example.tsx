@@ -17,8 +17,8 @@ const AsyncModalExample = () => {
 
       <div className='text-muted-foreground mt-4 space-y-4 text-sm'>
         <p>
-          `pushModalAsync` lets you await the user decision directly instead of wiring event
-          listeners for every branch.
+          <code className='text-foreground/80'>pushModalAsync</code> lets you await the user
+          decision directly instead of wiring event listeners for every branch.
         </p>
 
         <div className='flex flex-col gap-2 sm:flex-row'>

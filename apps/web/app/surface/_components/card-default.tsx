@@ -22,13 +22,11 @@ const DefaultModalExample = () => {
   return (
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Default Modal Example</DialogTitle>
-        <DialogDescription>
-          This modal is rendered dynamically when you push it using the pushModal function.
-        </DialogDescription>
+        <DialogTitle>Plain dialog</DialogTitle>
+        <DialogDescription>Pushed by name, no responsive wrapper.</DialogDescription>
       </DialogHeader>
       <div className='text-muted-foreground mt-4 min-h-80 text-sm'>
-        This is an example of a modal content.
+        The modal mounts when pushed and unmounts when closed.
       </div>
     </DialogContent>
   )
