@@ -67,6 +67,8 @@
     "./textarea": "./src/components/textarea.tsx",
     "./tabs": "./src/components/tabs.tsx",
     "./form": "./src/components/form.tsx",
-    "./sheet": "./src/components/sheet.tsx"
+    "./sheet": "./src/components/sheet.tsx",
+    "./copy-button": "./src/components/copy-button.tsx",
+    "./code-block": "./src/components/code-block.tsx"
   }
 }
