@@ -263,6 +263,77 @@ describe('createAuthz', () => {
     expect(cache.delete).toHaveBeenCalledWith('authz:user:user-1:snapshot')
   })
 
+  it('treats hung cache operations as a miss when cacheTimeoutMs is set', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const adapter = createAdapter()
+    const never = new Promise<never>(() => {})
+    const cache = {
+      get: vi.fn(() => never),
+      set: vi.fn(() => never),
+      delete: vi.fn(() => never),
+    }
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter,
+      cache,
+      cacheTimeoutMs: 10,
+    })
+
+    await expect(authz.getSnapshot()).resolves.toMatchObject({
+      user: { id: 'user-1' },
+    })
+    expect(consoleError).toHaveBeenCalled()
+
+    await expect(
+      authz.assignRole({ userId: 'user-1', roleId: 'role-orders-manager' })
+    ).resolves.toMatchObject({
+      success: false,
+      code: 'CACHE_INVALIDATION_FAILED',
+    })
+
+    consoleError.mockRestore()
+  })
+
+  it('keeps resolving snapshots when the cache backend is down', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const adapter = createAdapter()
+    const cache = {
+      get: vi.fn(async () => {
+        throw new Error('redis unreachable')
+      }),
+      set: vi.fn(async () => {
+        throw new Error('redis unreachable')
+      }),
+      delete: vi.fn(async () => {
+        throw new Error('redis unreachable')
+      }),
+    }
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter,
+      cache,
+    })
+
+    // Reads and writes degrade to a cache miss: guards keep working.
+    await expect(authz.getSnapshot()).resolves.toMatchObject({
+      user: { id: 'user-1' },
+    })
+    await expect(authz.can({ order: ['read'] })).resolves.toBe(true)
+    expect(consoleError).toHaveBeenCalled()
+
+    // Invalidation failures still surface instead of being swallowed.
+    await expect(
+      authz.assignRole({ userId: 'user-1', roleId: 'role-orders-manager' })
+    ).resolves.toMatchObject({
+      success: false,
+      code: 'CACHE_INVALIDATION_FAILED',
+    })
+
+    consoleError.mockRestore()
+  })
+
   it('reports missing roles on update and delete without throwing', async () => {
     const adapter = createAdapter()
     const notFound = () => {

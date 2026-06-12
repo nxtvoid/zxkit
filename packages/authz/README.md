@@ -449,6 +449,24 @@ Session expiration does not delete a cached snapshot by itself. This is not used
 
 With `@upstash/redis`, do not `JSON.parse` manually in a custom cache adapter. Upstash deserializes values by default.
 
+#### Cache Outages
+
+A failing cache backend (Redis unreachable, free-tier quota exceeded, network issues) does not take the app down. Cache reads and writes degrade to a cache miss: snapshots resolve directly through the adapter on every request, and the failure is logged to the console (throttled to once per minute) so you can fix the backend whenever you want. Expect higher database load while the cache is down.
+
+Errors are detected automatically. A backend that hangs instead of failing is only covered when you set `cacheTimeoutMs`; operations that exceed it count as failures:
+
+```ts
+export const authz = createAuthz({
+  permissions,
+  getSession,
+  adapter,
+  cache: redisCache(redis, { ttl: 60 * 30 }),
+  cacheTimeoutMs: 2000,
+})
+```
+
+Invalidation failures are the exception: they are reported instead of swallowed, because a snapshot that was never deleted could serve stale permissions once the backend recovers. Role mutations return `success: false` with `code: 'CACHE_INVALIDATION_FAILED'` in that case, and direct `invalidateUser()` / `invalidateUsers()` / `invalidateRole()` calls reject. After a cache outage that overlapped role mutations, clear the affected snapshot keys (or flush the `authz:user:` namespace) before trusting cached values again.
+
 ### Generate The AI Skill
 
 Generate a local Codex skill for this package in a consumer project:

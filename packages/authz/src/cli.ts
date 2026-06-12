@@ -513,6 +513,8 @@ export const authz = createAuthz({
 })
 \`\`\`
 
+Cache backend outages (Redis down or over quota) do not break authorization: cache reads/writes degrade to a cache miss, snapshots resolve through the adapter, and the failure is logged to the console (throttled). Set \`cacheTimeoutMs\` on \`createAuthz\` to also cover backends that hang instead of erroring. Invalidation failures are still reported (\`CACHE_INVALIDATION_FAILED\`) because unremoved snapshots could serve stale permissions after the backend recovers; clear the \`authz:user:\` keys after an outage that overlapped role mutations.
+
 With Redis/KV, \`assignRole\` deletes \`authz:user:<userId>:snapshot\` through the cache adapter. The next server snapshot read is fresh. If the current browser already has an \`AuthzProvider\` snapshot, call its refresh flow, navigate, or \`router.refresh()\` after the mutation so client-rendered guards see the new snapshot immediately.
 
 For custom Redis/KV clients, pass an object with \`get\`, \`set\`, and \`del\` methods shaped like the Upstash client.

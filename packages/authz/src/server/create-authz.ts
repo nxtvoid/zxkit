@@ -24,6 +24,12 @@ type CreateAuthzOptions<TUser extends AuthzUser, TPermissions extends Permission
   adapter: AuthzAdapter<TUser>
   cache?: AuthzCache | false
   cacheTtl?: number
+  /**
+   * Milliseconds before a cache operation is treated as failed. Reads and
+   * writes that time out degrade to a cache miss; invalidations that time out
+   * are reported as CACHE_INVALIDATION_FAILED. Off by default.
+   */
+  cacheTimeoutMs?: number
 }
 
 type GuardOptions = {
@@ -93,6 +99,78 @@ function isAssignmentConflictError(error: unknown) {
   return errorTargetIncludes(error, 'userId') || errorTargetIncludes(error, 'roleId')
 }
 
+const CACHE_ERROR_LOG_INTERVAL_MS = 60_000
+
+// Reads and writes degrade to a cache miss when the cache backend is down
+// (e.g. Redis unreachable or over quota) so authorization keeps resolving
+// through the adapter instead of crashing every guarded request. Deletes are
+// NOT wrapped: a swallowed invalidation could serve stale permissions once the
+// backend recovers, so those failures keep surfacing as CACHE_INVALIDATION_FAILED.
+function createResilientCache(cache: AuthzCache, timeoutMs?: number): AuthzCache {
+  let lastLoggedAt = 0
+
+  function logCacheError(operation: 'read' | 'write', error: unknown) {
+    const now = Date.now()
+
+    if (now - lastLoggedAt < CACHE_ERROR_LOG_INTERVAL_MS) {
+      return
+    }
+
+    lastLoggedAt = now
+    console.error(
+      `Authz cache ${operation} failed; continuing without cache until it recovers:`,
+      error
+    )
+  }
+
+  async function withTimeout<T>(operation: Awaitable<T>): Promise<T> {
+    if (!timeoutMs) {
+      return operation
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Authz cache operation timed out after ${timeoutMs}ms`)),
+            timeoutMs
+          )
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  return {
+    async get<T>(key: string) {
+      try {
+        return await withTimeout(cache.get<T>(key))
+      } catch (error) {
+        logCacheError('read', error)
+        return null
+      }
+    },
+    async set<T>(key: string, value: T, options?: { ttl?: number }) {
+      try {
+        await withTimeout(cache.set(key, value, options))
+      } catch (error) {
+        logCacheError('write', error)
+      }
+    },
+    delete: (key) => withTimeout(cache.delete(key)),
+    ...(cache.deleteMany
+      ? { deleteMany: (keys: string[]) => withTimeout(cache.deleteMany!(keys)) }
+      : {}),
+    ...(cache.clearNamespace
+      ? { clearNamespace: (namespace: string) => withTimeout(cache.clearNamespace!(namespace)) }
+      : {}),
+  }
+}
+
 function roleResult(
   input: Omit<AuthzRoleResult, 'role'> & { role?: AuthzRole | null }
 ): AuthzRoleResult {
@@ -112,7 +190,10 @@ export function createAuthz<
 >(options: CreateAuthzOptions<TUser, TPermissions>) {
   void options.permissions
 
-  const cache = options.cache === false ? createNoopCache() : (options.cache ?? createNoopCache())
+  const cache = createResilientCache(
+    options.cache === false ? createNoopCache() : (options.cache ?? createNoopCache()),
+    options.cacheTimeoutMs
+  )
   const cacheSetOptions = options.cacheTtl ? { ttl: options.cacheTtl } : undefined
   const inFlight = new Map<string, Promise<AuthzSnapshot<TUser>>>()
 
