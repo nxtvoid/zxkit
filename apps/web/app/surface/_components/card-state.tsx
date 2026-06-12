@@ -34,9 +34,9 @@ const StateModalExample = () => {
   return (
     <DynamicContent>
       <DialogHeader>
-        <DialogTitle>State Modal Example</DialogTitle>
+        <DialogTitle>Preserved state</DialogTitle>
         <DialogDescription>
-          This modal is rendered dynamically when you push it using the pushModal function.
+          Type something, resize the window — the values survive the swap.
         </DialogDescription>
       </DialogHeader>
       <div className='text-muted-foreground mt-4 min-h-80 text-sm'>
@@ -48,18 +48,18 @@ const StateModalExample = () => {
                 <Input
                   id='username'
                   type='text'
-                  placeholder='Max Leiter'
+                  placeholder='janedoe'
                   value={username}
                   onChange={(e) => setName(e.target.value)}
                 />
-                <FieldDescription>Choose a unique username for your account.</FieldDescription>
+                <FieldDescription>Choose a unique username.</FieldDescription>
               </Field>
               <Field>
                 <FieldLabel htmlFor='email'>Email</FieldLabel>
                 <Input
                   id='email'
                   type='email'
-                  placeholder='jhondoe@example.cn'
+                  placeholder='jane@example.com'
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
@@ -76,7 +76,7 @@ const StateModalExample = () => {
                     setAge(e.target.value ? parseInt(e.target.value, 10) : undefined)
                   }
                 />
-                <FieldDescription>Enter your age (must be 18 or older).</FieldDescription>
+                <FieldDescription>Enter your age.</FieldDescription>
               </Field>
             </FieldGroup>
           </FieldSet>
@@ -84,7 +84,7 @@ const StateModalExample = () => {
           <Button
             disabled={!username || !email || !age}
             onClick={() => {
-              toast.success('Data sent successfully!', {
+              toast.success('Submitted', {
                 description: (
                   <div className='flex items-center gap-2'>
                     <div>
@@ -101,7 +101,7 @@ const StateModalExample = () => {
               })
             }}
           >
-            Send Data
+            Submit
           </Button>
         </div>
       </div>

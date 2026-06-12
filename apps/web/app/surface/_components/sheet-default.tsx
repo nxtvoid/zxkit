@@ -21,15 +21,12 @@ const DefaultSheetExample = () => {
   return (
     <SheetContent>
       <SheetHeader>
-        <SheetTitle>Default Sheet Example</SheetTitle>
-        <SheetDescription>
-          This sheet is rendered dynamically when you push it using the pushModal function.
-        </SheetDescription>
+        <SheetTitle>Sheet</SheetTitle>
+        <SheetDescription>The same stack can push a shadcn Sheet.</SheetDescription>
       </SheetHeader>
       <div className='text-muted-foreground px-4 text-sm'>
-        This is a default sheet example. It uses the default sheet component provided by the
-        library. It is a simple sheet that can be used for any purpose. You can customize it by
-        passing your own content and styles.
+        Sheets are registered like any other modal — push, replace, and pop
+        work the same way.
       </div>
     </SheetContent>
   )

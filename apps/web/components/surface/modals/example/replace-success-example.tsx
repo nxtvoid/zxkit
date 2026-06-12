@@ -16,7 +16,10 @@ const ReplaceSuccessExample = () => {
       </DialogHeader>
 
       <div className='text-muted-foreground mt-4 space-y-4 text-sm'>
-        <p>`replace` keeps the flow focused when the next screen supersedes the current modal.</p>
+        <p>
+          <code className='text-foreground/80'>replace</code> keeps the flow focused when the next
+          screen supersedes the current modal.
+        </p>
 
         <Button onClick={close}>Done</Button>
       </div>
