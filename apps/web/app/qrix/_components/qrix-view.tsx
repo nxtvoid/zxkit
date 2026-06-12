@@ -3,11 +3,9 @@
 import { useState } from 'react'
 import { cn } from '@zxkit/ui/lib/utils'
 import { Input } from '@zxkit/ui/input'
-import { Badge } from '@zxkit/ui/badge'
 import { Slider } from '@zxkit/ui/slider'
 import { Button } from '@zxkit/ui/button'
 import { QRCodeSVG } from '@zxkit/qrix'
-import { Separator } from '@zxkit/ui/separator'
 import { InputGroup } from '@zxkit/ui/input-group'
 import { QrActionBar } from './qr-actionbar'
 import { PipetteIcon } from 'lucide-react'
@@ -40,7 +38,7 @@ const QRIXView = () => {
   }
 
   return (
-    <div className='flex flex-col items-center justify-center gap-10 py-10'>
+    <div className='flex flex-col items-center justify-center gap-10 py-4'>
       <div className='grid place-items-center gap-5'>
         <div className='border-border size-fit overflow-hidden rounded-md border'>
           <QRCodeSVG
@@ -70,7 +68,7 @@ const QRIXView = () => {
 
       <div className='mx-auto grid w-full max-w-md gap-10'>
         <Field className='w-full'>
-          <FieldLabel>QR Size {size}px</FieldLabel>
+          <FieldLabel>Size {size}px</FieldLabel>
           <Slider
             defaultValue={[size]}
             min={100}
@@ -94,20 +92,20 @@ const QRIXView = () => {
         </Field>
 
         <Field className='w-full'>
-          <FieldLabel>Link</FieldLabel>
+          <FieldLabel>Content</FieldLabel>
           <Input
             type='text'
-            placeholder='Enter URL or text'
+            placeholder='URL or text'
             value={value}
             onChange={(e) => setValue(e.target.value)}
           />
         </Field>
 
         <Field className='w-full'>
-          <FieldLabel>Logo URL (Image/SVG)</FieldLabel>
+          <FieldLabel>Logo URL (image or SVG)</FieldLabel>
           <Input
             type='text'
-            placeholder='Logo URL'
+            placeholder='https://example.com/logo.svg'
             value={logoUrl}
             onChange={(e) => setLogoUrl(e.target.value)}
           />
@@ -140,7 +138,7 @@ const QRIXView = () => {
         </Field>
 
         <Field className='overflow-hidden'>
-          <FieldLabel>QR Code Color</FieldLabel>
+          <FieldLabel>Color</FieldLabel>
           <div className='flex items-center gap-3'>
             <ButtonGroup className='border-border max-w-32 flex-1 shrink-0 overflow-hidden rounded-lg border'>
               <Popover>
@@ -182,19 +180,6 @@ const QRIXView = () => {
                 ))}
               </div>
             </div>
-          </div>
-        </Field>
-
-        <Separator />
-
-        <Field className='w-full'>
-          <FieldLabel>Other QR Code Options</FieldLabel>
-          <div className='grid gap-2 select-none sm:grid-cols-2'>
-            <Badge variant='secondary'>bgColor: white</Badge>
-            <Badge variant='secondary'>logoBackgroundColor: white</Badge>
-            <Badge variant='secondary'>errorCorrectionLevel: M</Badge>
-            <Badge variant='secondary'>className: N/A</Badge>
-            <Badge variant='secondary'>style: N/A</Badge>
           </div>
         </Field>
       </div>

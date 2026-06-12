@@ -1,6 +1,5 @@
-export const DEFAULT_URL = 'https://chatgpt.com'
-export const DEFAULT_LOGO_URL =
-  'https://res.cloudinary.com/dkfdzwyns/image/upload/openai_xgmgzw.svg'
+export const DEFAULT_URL = 'https://github.com/nxtvoid/zxkit'
+export const DEFAULT_LOGO_URL = '/favicon.ico'
 
 export const DEFAULT_COLORS = [
   '#262626',
