@@ -1,8 +1,12 @@
 export type {
   AuthzAdapter,
   AuthzCache,
+  AuthzCheckKind,
+  AuthzDeniedEvent,
+  AuthzGrantedEvent,
   AuthzMutationCode,
   AuthzMutationResult,
+  AuthzPermissionIssue,
   AuthzRole,
   AuthzRoleResult,
   AuthzRoute,
@@ -18,6 +22,8 @@ export type {
 } from './core/types'
 export {
   definePermissions,
+  filterByPermission,
+  getMissingPermissions,
   hasPermissions,
   mergePermissions,
   normalizePermissions,
@@ -43,4 +49,4 @@ export { memoryCache } from './cache/memory'
 export type { MemoryCache } from './cache/memory'
 export { redisCache } from './cache/redis'
 export type { RedisCacheClient, RedisCacheOptions } from './cache/redis'
-export { AccessDeniedError, createAuthz } from './server'
+export { AccessDeniedError, createAuthz, type Authz } from './server'

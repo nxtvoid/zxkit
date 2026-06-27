@@ -20,7 +20,10 @@ const {
   useAllowedNavigation,
   useAllowedRoutes,
   useCan,
+  useCanAny,
+  useCanEach,
   useCurrentNavigationNode,
+  useHasRoleEach,
   useNavigationBreadcrumb,
   useRoles,
 } = typedClient
@@ -239,6 +242,59 @@ describe('AuthzProvider', () => {
     expect(screen.queryByText('role-visible')).not.toBeNull()
     expect(screen.queryByText('can-delete-orders')).not.toBeNull()
     expect(screen.queryByText('orders_manager,billing_viewer')).not.toBeNull()
+  })
+
+  it('batches permission and role checks with useCanEach, useCanAny, and Can any', () => {
+    function Dashboard() {
+      const { canDeleteOrders, canExportInvoices } = useCanEach({
+        canDeleteOrders: { order: ['delete'] },
+        canExportInvoices: { invoice: ['export'] },
+      })
+      const canTouchMoney = useCanAny([{ invoice: ['export'] }, { order: ['read'] }])
+      const { isManager, isAdmin } = useHasRoleEach({
+        isManager: 'orders_manager',
+        isAdmin: 'admin',
+      })
+
+      return (
+        <>
+          <span>{canDeleteOrders ? 'each-delete-yes' : 'each-delete-no'}</span>
+          <span>{canExportInvoices ? 'each-export-yes' : 'each-export-no'}</span>
+          <span>{canTouchMoney ? 'any-money-yes' : 'any-money-no'}</span>
+          <span>{isManager ? 'role-manager-yes' : 'role-manager-no'}</span>
+          <span>{isAdmin ? 'role-admin-yes' : 'role-admin-no'}</span>
+        </>
+      )
+    }
+
+    render(
+      <AuthzProvider snapshot={snapshot}>
+        <Dashboard />
+        <Can
+          any={[{ invoice: ['export'] }, { order: ['delete'] }]}
+          fallback={<span>any-blocked</span>}
+        >
+          <span>can-any-visible</span>
+        </Can>
+        <Can
+          permissions={{ invoice: ['read'] }}
+          any={[{ settings: ['manage'] }]}
+          fallback={<span>can-and-any-blocked</span>}
+        >
+          <span>can-and-any-visible</span>
+        </Can>
+      </AuthzProvider>
+    )
+
+    expect(screen.queryByText('each-delete-yes')).not.toBeNull()
+    expect(screen.queryByText('each-export-no')).not.toBeNull()
+    expect(screen.queryByText('any-money-yes')).not.toBeNull()
+    expect(screen.queryByText('role-manager-yes')).not.toBeNull()
+    expect(screen.queryByText('role-admin-no')).not.toBeNull()
+    // order:delete satisfies the OR list.
+    expect(screen.queryByText('can-any-visible')).not.toBeNull()
+    // invoice:read passes but settings:manage (the only `any`) fails -> blocked.
+    expect(screen.queryByText('can-and-any-blocked')).not.toBeNull()
   })
 
   it('filters allowed routes without fetching', () => {

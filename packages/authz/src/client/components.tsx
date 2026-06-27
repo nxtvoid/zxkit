@@ -5,10 +5,16 @@ import type { AuthzRoute, PermissionInput, PermissionRequirement } from '../core
 import { hasPermissions } from '../core/permissions'
 import { hasMatchingRole } from '../core/roles'
 import { useAuthz } from './context'
-import { useCan, useRoles } from './hooks'
+import { useCan, useCanAny, useRoles } from './hooks'
 
 export type CanProps<TPermissions extends PermissionInput = PermissionInput> = {
   permissions?: PermissionRequirement<TPermissions>
+  /**
+   * OR semantics: render when the user satisfies any one of these requirements.
+   * Combined with `permissions` it is an additional AND condition (permissions
+   * must pass AND at least one `any` requirement must pass).
+   */
+  any?: readonly PermissionRequirement<TPermissions>[]
   loading?: React.ReactNode
   fallback?: React.ReactNode
   children?: React.ReactNode
@@ -42,12 +48,15 @@ export type AuthzGuardComponent<TPermissions extends PermissionInput = Permissio
 
 export function Can<TPermissions extends PermissionInput = PermissionInput>({
   permissions,
+  any,
   loading = null,
   fallback = null,
   children,
 }: CanProps<TPermissions>) {
   const { isPending } = useAuthz()
-  const allowed = useCan(permissions)
+  const hasPermission = useCan(permissions)
+  const hasAny = useCanAny(any ?? [])
+  const allowed = hasPermission && (any && any.length > 0 ? hasAny : true)
 
   if (isPending) {
     return <>{loading}</>

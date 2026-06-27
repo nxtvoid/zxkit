@@ -37,10 +37,66 @@ export function useCan<TPermissions extends PermissionInput = PermissionInput>(
   return hasPermissions(snapshot?.permissions ?? {}, permissions as PermissionInput | undefined)
 }
 
+// Client parallel of authz.canEach: many keyed checks against the provider
+// snapshot. Destructure by name instead of calling useCan once per flag.
+export function useCanEach<TChecks extends Record<string, PermissionRequirement<PermissionInput>>>(
+  checks: TChecks
+): Record<keyof TChecks, boolean> {
+  const permissions = useAuthz().snapshot?.permissions
+
+  return React.useMemo(() => {
+    const owned = permissions ?? {}
+    const result = {} as Record<keyof TChecks, boolean>
+
+    for (const key in checks) {
+      result[key] = hasPermissions(owned, checks[key] as PermissionInput)
+    }
+
+    return result
+  }, [checks, permissions])
+}
+
+// Client parallel of authz.canAny: OR across a list of requirements.
+export function useCanAny<TPermissions extends PermissionInput = PermissionInput>(
+  requirements: readonly PermissionRequirement<TPermissions>[]
+) {
+  const permissions = useAuthz().snapshot?.permissions
+
+  return React.useMemo(
+    () =>
+      requirements.some((requirement) =>
+        hasPermissions(permissions ?? {}, requirement as PermissionInput)
+      ),
+    [requirements, permissions]
+  )
+}
+
 export function useHasRole(role: string | readonly string[], options?: { match?: 'all' | 'any' }) {
   const { snapshot } = useAuthz()
   const roles = Array.isArray(role) ? role : [role]
   return hasMatchingRole(snapshot?.roles ?? [], roles, options?.match)
+}
+
+// Role parallel of useCanEach: many keyed role checks against the snapshot.
+export function useHasRoleEach<TChecks extends Record<string, string | readonly string[]>>(
+  checks: TChecks,
+  options?: { match?: 'all' | 'any' }
+): Record<keyof TChecks, boolean> {
+  const roles = useAuthz().snapshot?.roles
+  const match = options?.match
+
+  return React.useMemo(() => {
+    const owned = roles ?? []
+    const result = {} as Record<keyof TChecks, boolean>
+
+    for (const key in checks) {
+      const value = checks[key]
+      const required = Array.isArray(value) ? value : [value as string]
+      result[key] = hasMatchingRole(owned, required, match)
+    }
+
+    return result
+  }, [checks, roles, match])
 }
 
 export function useCanAccessRoute<TPermissions extends PermissionInput = PermissionInput>(

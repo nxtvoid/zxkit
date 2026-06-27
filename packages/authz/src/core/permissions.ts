@@ -60,3 +60,58 @@ export function hasPermissions(owned: PermissionInput, required: PermissionInput
     return actions.every((action) => ownedActions.includes(action))
   })
 }
+
+// Returns the subset of `required` the owner does NOT have, keyed by resource.
+// An empty object means every requirement is satisfied. Mirrors hasPermissions
+// (wildcards, empty-action-array semantics) so the two never disagree. Useful
+// for richer 403 messages and audit logs instead of a bare boolean.
+export function getMissingPermissions(
+  owned: PermissionInput,
+  required: PermissionInput | undefined
+): Permissions {
+  if (!required || Object.keys(required).length === 0) {
+    return {}
+  }
+
+  const normalizedRequired = normalizePermissions(required)
+  const globalActions = owned['*'] ?? []
+
+  if (globalActions.includes('*')) {
+    return {}
+  }
+
+  const missing: Permissions = {}
+
+  for (const [resource, actions] of Object.entries(normalizedRequired)) {
+    const ownedActions = owned[resource] ?? []
+
+    if (ownedActions.includes('*')) {
+      continue
+    }
+
+    if (actions.length === 0) {
+      if (ownedActions.length === 0) {
+        missing[resource] = []
+      }
+      continue
+    }
+
+    const missingActions = actions.filter((action) => !ownedActions.includes(action))
+
+    if (missingActions.length > 0) {
+      missing[resource] = missingActions
+    }
+  }
+
+  return missing
+}
+
+// Keeps the items whose required permissions the owner satisfies. The selector
+// maps an item to its requirement; items that map to undefined always pass.
+export function filterByPermission<TItem>(
+  owned: PermissionInput,
+  items: readonly TItem[],
+  select: (item: TItem) => PermissionInput | undefined
+): TItem[] {
+  return items.filter((item) => hasPermissions(owned, select(item)))
+}

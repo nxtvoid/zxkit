@@ -30,8 +30,11 @@ import {
   useAuthzSnapshot,
   useCan,
   useCanAccessRoute,
+  useCanAny,
+  useCanEach,
   useCurrentNavigationNode,
   useHasRole,
+  useHasRoleEach,
   useNavigationBreadcrumb,
   useRoles,
 } from './hooks'
@@ -82,8 +85,16 @@ export type TypedAuthzClient<TPermissions extends PermissionInput> = {
   useAuthzRefresh: () => (() => Promise<void>) | undefined
   useAuthzSnapshot: () => TypedAuthzSnapshot<TPermissions> | null
   useCan: (permissions?: PermissionRequirement<TPermissions>) => boolean
+  useCanEach: <const TChecks extends Record<string, PermissionRequirement<TPermissions>>>(
+    checks: TChecks
+  ) => Record<keyof TChecks, boolean>
+  useCanAny: (requirements: readonly PermissionRequirement<TPermissions>[]) => boolean
   useCanAccessRoute: (route: AuthzRoute<Record<string, unknown>, TPermissions>) => boolean
   useHasRole: (role: string | readonly string[], options?: { match?: 'all' | 'any' }) => boolean
+  useHasRoleEach: <const TChecks extends Record<string, string | readonly string[]>>(
+    checks: TChecks,
+    options?: { match?: 'all' | 'any' }
+  ) => Record<keyof TChecks, boolean>
   useRoles: () => string[]
 }
 
@@ -108,8 +119,11 @@ export function createAuthzClient<const TPermissions extends PermissionInput>(
     useAuthzRefresh,
     useAuthzSnapshot: useAuthzSnapshot as TypedAuthzClient<TPermissions>['useAuthzSnapshot'],
     useCan: useCan as TypedAuthzClient<TPermissions>['useCan'],
+    useCanEach: useCanEach as TypedAuthzClient<TPermissions>['useCanEach'],
+    useCanAny: useCanAny as TypedAuthzClient<TPermissions>['useCanAny'],
     useCanAccessRoute: useCanAccessRoute as TypedAuthzClient<TPermissions>['useCanAccessRoute'],
     useHasRole,
+    useHasRoleEach: useHasRoleEach as TypedAuthzClient<TPermissions>['useHasRoleEach'],
     useRoles,
   }
 }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AccessDeniedError, createAuthz } from './server.js'
 import {
   definePermissions,
+  defineRoutes,
   memoryCache,
   type AuthzAdapter,
   type AuthzCache,
@@ -62,6 +63,198 @@ describe('createAuthz', () => {
     await expect(authz.can({ order: ['delete'] })).resolves.toBe(true)
     await expect(authz.can({ settings: ['manage'] })).resolves.toBe(false)
     await expect(authz.hasRole('orders_manager')).resolves.toBe(true)
+  })
+
+  it('checks many permissions at once with canEach', async () => {
+    const adapter = createAdapter()
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter,
+      cache: memoryCache({ ttl: 60 }),
+    })
+
+    await expect(
+      authz.canEach({
+        canReadOrders: { order: ['read'] },
+        canDeleteOrders: { order: ['delete'] },
+        canExportInvoices: { invoice: ['export'] },
+        canManageSettings: { settings: ['manage'] },
+      })
+    ).resolves.toEqual({
+      canReadOrders: true,
+      canDeleteOrders: true,
+      canExportInvoices: false,
+      canManageSettings: false,
+    })
+
+    // One snapshot resolves all four checks.
+    expect(adapter.getUserRoles).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes canAny when any single requirement matches', async () => {
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter: createAdapter(),
+    })
+
+    // Has order:delete but not settings:manage -> OR passes.
+    await expect(authz.canAny([{ settings: ['manage'] }, { order: ['delete'] }])).resolves.toBe(
+      true
+    )
+    // Neither held -> OR fails.
+    await expect(authz.canAny([{ settings: ['manage'] }, { invoice: ['export'] }])).resolves.toBe(
+      false
+    )
+    // requireAny throws when none match.
+    await expect(authz.requireAny([{ settings: ['manage'] }])).rejects.toBeInstanceOf(
+      AccessDeniedError
+    )
+    await expect(authz.requireAny([{ order: ['read'] }])).resolves.toBeUndefined()
+  })
+
+  it('reports missing permissions, batches roles, and filters lists', async () => {
+    const adapter = createAdapter()
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter,
+      cache: memoryCache({ ttl: 60 }),
+    })
+
+    // order:read,delete granted; create missing.
+    await expect(authz.missingPermissions({ order: ['read', 'create'] })).resolves.toEqual({
+      order: ['create'],
+    })
+    await expect(authz.missingPermissions({ order: ['delete'] })).resolves.toEqual({})
+
+    await expect(
+      authz.hasRoleEach({
+        orders: 'orders_manager',
+        invoices: 'invoices_viewer',
+        admin: 'admin',
+      })
+    ).resolves.toEqual({ orders: true, invoices: true, admin: false })
+
+    const items = [
+      { id: 'a', need: { order: ['delete'] as const } },
+      { id: 'b', need: { settings: ['manage'] as const } },
+    ]
+    await expect(authz.filterByPermission(items, (item) => item.need)).resolves.toEqual([
+      { id: 'a', need: { order: ['delete'] } },
+    ])
+
+    // All four reads resolved from a single snapshot.
+    expect(adapter.getUserRoles).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs scoped checks, conditional queries, and route guards', async () => {
+    const adapter = createAdapter()
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter,
+      cache: memoryCache({ ttl: 60 }),
+    })
+
+    const routes = defineRoutes({
+      orders: { path: '/orders', label: 'Orders', permissions: { order: ['read'] } },
+      settings: { path: '/settings', label: 'Settings', permissions: { settings: ['manage'] } },
+    })
+
+    // authorize(): one snapshot, synchronous gates.
+    const auth = await authz.authorize()
+    expect(auth.can({ order: ['delete'] })).toBe(true)
+    expect(auth.can({ settings: ['manage'] })).toBe(false)
+    expect(auth.canAll([{ order: ['read'] }, { invoice: ['read'] }])).toBe(true)
+    expect(auth.canAny([{ settings: ['manage'] }, { order: ['read'] }])).toBe(true)
+    expect(auth.when({ order: ['read'] }, () => 'ran', 'skipped')).toBe('ran')
+    expect(auth.when({ settings: ['manage'] }, () => 'ran', 'skipped')).toBe('skipped')
+
+    // canAll / when at the top level.
+    await expect(authz.canAll([{ order: ['read'] }, { settings: ['manage'] }])).resolves.toBe(false)
+    await expect(authz.when({ order: ['read'] }, () => 'query', 'fallback')).resolves.toBe('query')
+    await expect(authz.when({ settings: ['manage'] }, () => 'query', 'fallback')).resolves.toBe(
+      'fallback'
+    )
+
+    await expect(authz.listPermissions()).resolves.toEqual({
+      order: ['read', 'delete'],
+      invoice: ['read'],
+    })
+
+    // protectRoute: passes on allowed route, throws on denied.
+    const loadOrders = authz.protectRoute(routes.orders, async ({ user }) => user.id)
+    const loadSettings = authz.protectRoute(routes.settings, async ({ user }) => user.id)
+    await expect(loadOrders()).resolves.toBe('user-1')
+    await expect(loadSettings()).rejects.toBeInstanceOf(AccessDeniedError)
+
+    // Every check above shared one snapshot.
+    expect(adapter.getUserRoles).toHaveBeenCalledTimes(1)
+  })
+
+  it('flags stored role permissions outside the catalog', () => {
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter: createAdapter(),
+    })
+
+    expect(authz.validateRolePermissions({ permissions: { order: ['read', 'destroy'] } })).toEqual([
+      { resource: 'order', action: 'destroy', reason: 'unknown-action' },
+    ])
+    expect(authz.validateRolePermissions({ permissions: { ticket: ['read'] } })).toEqual([
+      { resource: 'ticket', reason: 'unknown-resource' },
+    ])
+    expect(authz.validateRolePermissions({ permissions: { '*': ['*'], order: ['read'] } })).toEqual(
+      []
+    )
+  })
+
+  it('fires audit hooks on guard grants and denials', async () => {
+    const onDenied = vi.fn()
+    const onGranted = vi.fn()
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => ({ user: { id: 'user-1' } }),
+      adapter: createAdapter(),
+      onDenied,
+      onGranted,
+    })
+
+    await authz.require({ order: ['delete'] })
+    expect(onGranted).toHaveBeenCalledWith({
+      userId: 'user-1',
+      kind: 'permission',
+      required: { order: ['delete'] },
+    })
+
+    await expect(authz.require({ settings: ['manage'] })).rejects.toBeInstanceOf(AccessDeniedError)
+    expect(onDenied).toHaveBeenCalledWith({
+      userId: 'user-1',
+      kind: 'permission',
+      code: 'FORBIDDEN',
+      required: { settings: ['manage'] },
+    })
+
+    // Non-throwing checks stay silent.
+    onGranted.mockClear()
+    await authz.can({ order: ['read'] })
+    expect(onGranted).not.toHaveBeenCalled()
+  })
+
+  it('emits an unauthorized audit event when no session', async () => {
+    const onDenied = vi.fn()
+    const authz = createAuthz({
+      permissions: permissionCatalog,
+      getSession: async () => null,
+      adapter: createAdapter(),
+      onDenied,
+    })
+
+    await expect(authz.requireAuth()).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+    expect(onDenied).toHaveBeenCalledWith({ kind: 'auth', code: 'UNAUTHORIZED' })
   })
 
   it('protects handlers with permissions and roles', async () => {
