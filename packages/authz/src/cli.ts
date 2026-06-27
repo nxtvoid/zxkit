@@ -133,6 +133,21 @@ The server helper file should not include \`'use client'\`. It may import server
 
 Use \`authz.protect\`, \`authz.require\`, \`authz.hasRole\`, \`authz.requireRole\`, and \`authz.requireRoute\` in server actions, route handlers, server components, and proxy code.
 
+For many checks at once, use \`authz.canEach({ ... })\` instead of a positional \`Promise.all\`: it resolves one snapshot and returns a record keyed like the input. \`can\` ANDs the actions inside one requirement; use \`authz.canAny([...])\` (or \`authz.requireAny([...])\`) for OR across a list of requirements, and \`authz.canAll([...])\` for AND across a dynamic list. \`authz.hasRoleEach({ ... })\` is the role parallel of \`canEach\`. \`authz.missingPermissions(req)\` returns the resource/action pairs the user lacks (\`{}\` when allowed) for precise 403 messages; \`authz.filterByPermission(items, (item) => item.permissions)\` keeps only the items the user may access. On the client, the same batch/OR helpers are \`useCanEach\`, \`useCanAny\`, and \`useHasRoleEach\`, and \`<Can any={[...]}>\` does OR in JSX.
+
+When a server action runs several conditional queries gated on different permissions, call \`authz.authorize()\` once and use its synchronous checkers (\`can\`, \`canAny\`, \`canAll\`, \`hasRole\`, \`missingPermissions\`, \`when\`) instead of awaiting \`can\` repeatedly. \`authz.when(req, run, fallback?)\` runs \`run\` only when allowed (one-off). \`authz.protectRoute(route, handler)\` gates a handler on a \`defineRoutes\` route, mirroring \`protect\`/\`protectRole\`/\`protectAuth\`.
+
+\`\`\`ts
+export async function loadDashboard() {
+  const auth = await authz.authorize()
+  const orders = auth.can({ order: ['read'] }) ? await db.order.findMany() : []
+  const invoices = await auth.when({ invoice: ['read'] }, () => db.invoice.findMany())
+  return { user: auth.user, orders, invoices }
+}
+\`\`\`
+
+Pass \`onDenied\` / \`onGranted\` to \`createAuthz\` for audit logging of throwing guards (event \`kind\`: \`permission\` | \`role\` | \`route\` | \`auth\`); non-throwing checks stay silent. Run \`authz.validateRolePermissions(role)\` in seeds or admin tools to flag stored role permissions that fall outside the catalog after a rename. Type the configured helper with \`Authz<TUser, typeof permissions>\` instead of \`ReturnType<typeof createAuthz>\`.
+
 \`\`\`ts
 export const deleteOrder = authz.protect(
   { order: ['delete'] },
@@ -151,6 +166,16 @@ await authz.requireRole(['admin', 'billing'], { match: 'all' })
 
 const canExportInvoices = await authz.can({ invoice: ['export'] })
 const snapshot = await authz.getSnapshot()
+
+// Batch many independent checks against one snapshot; destructure by name.
+const { canReadOrders, canExportInvoices: canExport } = await authz.canEach({
+  canReadOrders: { order: ['read'] },
+  canExportInvoices: { invoice: ['export'] },
+})
+
+// OR across requirements: passes when any one matches. requireAny throws.
+const canTouchOrders = await authz.canAny([{ order: ['read'] }, { order: ['delete'] }])
+await authz.requireAny([{ order: ['delete'] }, { invoice: ['export'] }])
 
 const updateSettings = authz.protect(
   { settings: ['manage'] },
@@ -223,8 +248,11 @@ export const {
   useCurrentNavigationNode,
   useNavigationBreadcrumb,
   useCan,
+  useCanEach,
+  useCanAny,
   useCanAccessRoute,
   useHasRole,
+  useHasRoleEach,
   useRoles,
 } = authzClient
 \`\`\`

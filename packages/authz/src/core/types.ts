@@ -31,6 +31,27 @@ export type PermissionSnapshot<TCatalog extends PermissionInput = PermissionInpu
         '*'?: Array<'*'>
       }
 
+export type AuthzCheckKind = 'permission' | 'role' | 'route' | 'auth'
+
+export type AuthzDeniedEvent = {
+  userId?: string
+  kind: AuthzCheckKind
+  code: 'UNAUTHORIZED' | 'FORBIDDEN'
+  required?: unknown
+}
+
+export type AuthzGrantedEvent = {
+  userId: string
+  kind: AuthzCheckKind
+  required?: unknown
+}
+
+export type AuthzPermissionIssue = {
+  resource: string
+  action?: string
+  reason: 'unknown-resource' | 'unknown-action'
+}
+
 export type AuthzUser = {
   id: string
   [key: string]: unknown

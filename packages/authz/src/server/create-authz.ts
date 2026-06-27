@@ -1,7 +1,10 @@
 import type {
   AuthzAdapter,
   AuthzCache,
+  AuthzDeniedEvent,
+  AuthzGrantedEvent,
   AuthzMutationResult,
+  AuthzPermissionIssue,
   AuthzRole,
   AuthzRoleResult,
   AuthzRoute,
@@ -11,8 +14,9 @@ import type {
   Awaitable,
   PermissionInput,
   PermissionRequirement,
+  Permissions,
 } from '../core/types'
-import { hasPermissions } from '../core/permissions'
+import { filterByPermission, getMissingPermissions, hasPermissions } from '../core/permissions'
 import { hasMatchingRole } from '../core/roles'
 import { SNAPSHOT_NAMESPACE, createSnapshot, createSnapshotKey } from '../core/snapshot'
 import { createNoopCache } from '../cache/noop'
@@ -30,6 +34,17 @@ type CreateAuthzOptions<TUser extends AuthzUser, TPermissions extends Permission
    * are reported as CACHE_INVALIDATION_FAILED. Off by default.
    */
   cacheTimeoutMs?: number
+  /**
+   * Fired when a throwing guard (`require*`, `protect*`) denies access. Useful
+   * for audit logs and telemetry. Hook errors are caught and logged, never
+   * propagated.
+   */
+  onDenied?: (event: AuthzDeniedEvent) => void
+  /**
+   * Fired when a throwing guard (`require*`, `protect*`) grants access. Hook
+   * errors are caught and logged, never propagated.
+   */
+  onGranted?: (event: AuthzGrantedEvent) => void
 }
 
 type GuardOptions = {
@@ -211,6 +226,57 @@ export function createAuthz<
     return session
   }
 
+  // Audit hooks must never break authorization, so a throwing hook is caught
+  // and logged instead of propagating into the guarded code path.
+  function notifyDenied(event: AuthzDeniedEvent) {
+    try {
+      options.onDenied?.(event)
+    } catch (error) {
+      console.error('Authz onDenied hook failed:', error)
+    }
+  }
+
+  function notifyGranted(event: AuthzGrantedEvent) {
+    try {
+      options.onGranted?.(event)
+    } catch (error) {
+      console.error('Authz onGranted hook failed:', error)
+    }
+  }
+
+  // Snapshot resolver used only by throwing guards so a missing session emits an
+  // onDenied 'UNAUTHORIZED' event. Non-throwing checks (can, canEach, ...) use
+  // getSnapshot directly and stay silent.
+  async function guardSnapshot(
+    kind: AuthzDeniedEvent['kind'],
+    required: unknown,
+    guardOptions?: GuardOptions
+  ) {
+    try {
+      return await getSnapshot(guardOptions)
+    } catch (error) {
+      if (AccessDeniedError.is(error) && error.code === 'UNAUTHORIZED') {
+        notifyDenied({ kind, code: 'UNAUTHORIZED', required })
+      }
+      throw error
+    }
+  }
+
+  // Public auth guard (distinct from the silent internal requireAuth used by
+  // getSnapshot) so a direct authz.requireAuth() participates in audit hooks.
+  async function requireSession() {
+    try {
+      const session = await requireAuth()
+      notifyGranted({ userId: session.user.id, kind: 'auth' })
+      return session
+    } catch (error) {
+      if (AccessDeniedError.is(error) && error.code === 'UNAUTHORIZED') {
+        notifyDenied({ kind: 'auth', code: 'UNAUTHORIZED' })
+      }
+      throw error
+    }
+  }
+
   async function fetchSnapshot(session: AuthzSession<TUser>, key: string) {
     const roles = await options.adapter.getUserRoles({
       userId: session.user.id,
@@ -286,8 +352,196 @@ export function createAuthz<
     permissions: PermissionRequirement<TPermissions>,
     guardOptions?: GuardOptions
   ) {
-    if (!(await can(permissions, guardOptions))) {
+    const snapshot = await guardSnapshot('permission', permissions, guardOptions)
+
+    if (!hasPermissions(snapshot.permissions, permissions as PermissionInput)) {
+      notifyDenied({
+        userId: snapshot.user.id,
+        kind: 'permission',
+        code: 'FORBIDDEN',
+        required: permissions,
+      })
       throw new AccessDeniedError('Missing required permission', 'FORBIDDEN')
+    }
+
+    notifyGranted({ userId: snapshot.user.id, kind: 'permission', required: permissions })
+  }
+
+  // Runs `run` only when the current user satisfies the requirement, otherwise
+  // returns `fallback` (undefined by default). Convenient for Prisma queries
+  // that should execute conditionally inside a server action.
+  async function when<TResult, TFallback = undefined>(
+    permissions: PermissionRequirement<TPermissions>,
+    run: (context: AuthzSnapshot<TUser>) => Awaitable<TResult>,
+    fallback?: TFallback,
+    guardOptions?: GuardOptions
+  ): Promise<TResult | TFallback> {
+    const snapshot = await getSnapshot(guardOptions)
+
+    if (hasPermissions(snapshot.permissions, permissions as PermissionInput)) {
+      return run(snapshot)
+    }
+
+    return fallback as TFallback
+  }
+
+  // Resolves the snapshot once, then checks every entry against it. Returns a
+  // record keyed the same as the input so callers destructure by name instead of
+  // juggling a positional Promise.all.
+  async function canEach<TChecks extends Record<string, PermissionRequirement<TPermissions>>>(
+    checks: TChecks,
+    guardOptions?: GuardOptions
+  ): Promise<Record<keyof TChecks, boolean>> {
+    const snapshot = await getSnapshot(guardOptions)
+    const result = {} as Record<keyof TChecks, boolean>
+
+    for (const key in checks) {
+      result[key] = hasPermissions(snapshot.permissions, checks[key] as PermissionInput)
+    }
+
+    return result
+  }
+
+  // OR across a list of requirements: passes when the user satisfies any one of
+  // them. `can` already ANDs the actions inside a single requirement.
+  async function canAny(
+    requirements: readonly PermissionRequirement<TPermissions>[],
+    guardOptions?: GuardOptions
+  ) {
+    const snapshot = await getSnapshot(guardOptions)
+    return requirements.some((requirement) =>
+      hasPermissions(snapshot.permissions, requirement as PermissionInput)
+    )
+  }
+
+  // AND across a list of requirements (mirror of canAny). Equivalent to merging
+  // them into one `can` object, but convenient when requirements come from a
+  // dynamic array.
+  async function canAll(
+    requirements: readonly PermissionRequirement<TPermissions>[],
+    guardOptions?: GuardOptions
+  ) {
+    const snapshot = await getSnapshot(guardOptions)
+    return requirements.every((requirement) =>
+      hasPermissions(snapshot.permissions, requirement as PermissionInput)
+    )
+  }
+
+  async function requireAny(
+    requirements: readonly PermissionRequirement<TPermissions>[],
+    guardOptions?: GuardOptions
+  ) {
+    const snapshot = await guardSnapshot('permission', requirements, guardOptions)
+    const allowed = requirements.some((requirement) =>
+      hasPermissions(snapshot.permissions, requirement as PermissionInput)
+    )
+
+    if (!allowed) {
+      notifyDenied({
+        userId: snapshot.user.id,
+        kind: 'permission',
+        code: 'FORBIDDEN',
+        required: requirements,
+      })
+      throw new AccessDeniedError('Missing required permission', 'FORBIDDEN')
+    }
+
+    notifyGranted({ userId: snapshot.user.id, kind: 'permission', required: requirements })
+  }
+
+  // Returns the resource/action pairs the current user is missing for the given
+  // requirement ({} when fully allowed). Use it for precise 403 messages or audit
+  // logs where a bare `can` boolean is not enough.
+  async function missingPermissions(
+    permissions: PermissionRequirement<TPermissions>,
+    guardOptions?: GuardOptions
+  ): Promise<Permissions> {
+    const snapshot = await getSnapshot(guardOptions)
+    return getMissingPermissions(snapshot.permissions, permissions as PermissionInput)
+  }
+
+  // Filters a list down to the items whose permission requirement the current
+  // user satisfies, resolving the snapshot a single time.
+  async function filterAllowed<TItem>(
+    items: readonly TItem[],
+    select: (item: TItem) => PermissionRequirement<TPermissions> | undefined,
+    guardOptions?: GuardOptions
+  ): Promise<TItem[]> {
+    const snapshot = await getSnapshot(guardOptions)
+    return filterByPermission(
+      snapshot.permissions,
+      items,
+      (item) => select(item) as PermissionInput | undefined
+    )
+  }
+
+  // Flat map of the permissions the current user actually has. Thin convenience
+  // over getSnapshot().permissions, mirroring listRoles().
+  async function listPermissions(guardOptions?: GuardOptions): Promise<Permissions> {
+    return (await getSnapshot(guardOptions)).permissions
+  }
+
+  // Flags stored role permissions that fall outside the code catalog. Catalog
+  // renames (e.g. `order` -> `orders`) silently strand DB roles otherwise; run
+  // this in seeds, migrations, or an admin UI to surface the drift. Wildcards
+  // are always valid; an empty array means the role is clean.
+  function validateRolePermissions(role: { permissions: PermissionInput }): AuthzPermissionIssue[] {
+    const catalog = options.permissions as PermissionInput
+    const issues: AuthzPermissionIssue[] = []
+
+    for (const [resource, actions] of Object.entries(role.permissions)) {
+      if (resource === '*') {
+        continue
+      }
+
+      const catalogActions = catalog[resource]
+
+      if (!catalogActions) {
+        issues.push({ resource, reason: 'unknown-resource' })
+        continue
+      }
+
+      for (const action of actions) {
+        if (action === '*') {
+          continue
+        }
+
+        if (!catalogActions.includes(action)) {
+          issues.push({ resource, action, reason: 'unknown-action' })
+        }
+      }
+    }
+
+    return issues
+  }
+
+  // Resolves the snapshot once and returns synchronous checkers bound to it.
+  // Ideal inside a server action that runs several conditional Prisma queries:
+  // one snapshot fetch, then plain boolean gates with no further awaits.
+  async function authorize(guardOptions?: GuardOptions) {
+    const snapshot = await getSnapshot(guardOptions)
+
+    const scopedCan = (permissions: PermissionRequirement<TPermissions>) =>
+      hasPermissions(snapshot.permissions, permissions as PermissionInput)
+
+    return {
+      user: snapshot.user,
+      roles: snapshot.roles,
+      permissions: snapshot.permissions,
+      can: scopedCan,
+      canAny: (requirements: readonly PermissionRequirement<TPermissions>[]) =>
+        requirements.some(scopedCan),
+      canAll: (requirements: readonly PermissionRequirement<TPermissions>[]) =>
+        requirements.every(scopedCan),
+      hasRole: (roles: string | readonly string[], roleOptions?: { match?: 'all' | 'any' }) =>
+        hasMatchingRole(snapshot.roles, Array.isArray(roles) ? roles : [roles], roleOptions?.match),
+      missingPermissions: (permissions: PermissionRequirement<TPermissions>) =>
+        getMissingPermissions(snapshot.permissions, permissions as PermissionInput),
+      when: <TResult, TFallback = undefined>(
+        permissions: PermissionRequirement<TPermissions>,
+        run: () => TResult,
+        fallback?: TFallback
+      ): TResult | TFallback => (scopedCan(permissions) ? run() : (fallback as TFallback)),
     }
   }
 
@@ -300,13 +554,36 @@ export function createAuthz<
     return hasMatchingRole(snapshot.roles, requiredRoles, options?.match)
   }
 
+  // Role parallel of canEach: many keyed role checks against one snapshot.
+  async function hasRoleEach<TChecks extends Record<string, string | readonly string[]>>(
+    checks: TChecks,
+    options?: GuardOptions & { match?: 'all' | 'any' }
+  ): Promise<Record<keyof TChecks, boolean>> {
+    const snapshot = await getSnapshot(options)
+    const result = {} as Record<keyof TChecks, boolean>
+
+    for (const key in checks) {
+      const value = checks[key]
+      const requiredRoles = Array.isArray(value) ? value : [value as string]
+      result[key] = hasMatchingRole(snapshot.roles, requiredRoles, options?.match)
+    }
+
+    return result
+  }
+
   async function requireRole(
     roles: string | readonly string[],
     options?: GuardOptions & { match?: 'all' | 'any' }
   ) {
-    if (!(await hasRole(roles, options))) {
+    const snapshot = await guardSnapshot('role', roles, options)
+    const requiredRoles = Array.isArray(roles) ? roles : [roles]
+
+    if (!hasMatchingRole(snapshot.roles, requiredRoles, options?.match)) {
+      notifyDenied({ userId: snapshot.user.id, kind: 'role', code: 'FORBIDDEN', required: roles })
       throw new AccessDeniedError('Missing required role', 'FORBIDDEN')
     }
+
+    notifyGranted({ userId: snapshot.user.id, kind: 'role', required: roles })
   }
 
   async function canAccessRoute(
@@ -324,9 +601,17 @@ export function createAuthz<
     route: AuthzRoute<Record<string, unknown>, TPermissions>,
     guardOptions?: GuardOptions
   ) {
-    if (!(await canAccessRoute(route, guardOptions))) {
+    const snapshot = await guardSnapshot('route', route, guardOptions)
+    const allowed =
+      hasMatchingRole(snapshot.roles, route.roles, route.match) &&
+      hasPermissions(snapshot.permissions, route.permissions as PermissionInput | undefined)
+
+    if (!allowed) {
+      notifyDenied({ userId: snapshot.user.id, kind: 'route', code: 'FORBIDDEN', required: route })
       throw new AccessDeniedError('Missing required route access', 'FORBIDDEN')
     }
+
+    notifyGranted({ userId: snapshot.user.id, kind: 'route', required: route })
   }
 
   function protect<TArgs extends unknown[], TResult>(
@@ -335,11 +620,19 @@ export function createAuthz<
     guardOptions?: GuardOptions
   ) {
     return async (...args: TArgs) => {
-      const snapshot = await getSnapshot(guardOptions)
+      const snapshot = await guardSnapshot('permission', permissions, guardOptions)
 
       if (!hasPermissions(snapshot.permissions, permissions as PermissionInput)) {
+        notifyDenied({
+          userId: snapshot.user.id,
+          kind: 'permission',
+          code: 'FORBIDDEN',
+          required: permissions,
+        })
         throw new AccessDeniedError('Missing required permission', 'FORBIDDEN')
       }
+
+      notifyGranted({ userId: snapshot.user.id, kind: 'permission', required: permissions })
 
       return handler(snapshot, ...args)
     }
@@ -351,12 +644,44 @@ export function createAuthz<
     options?: GuardOptions & { match?: 'all' | 'any' }
   ) {
     return async (...args: TArgs) => {
-      const snapshot = await getSnapshot(options)
+      const snapshot = await guardSnapshot('role', roles, options)
       const requiredRoles = Array.isArray(roles) ? roles : [roles]
 
       if (!hasMatchingRole(snapshot.roles, requiredRoles, options?.match)) {
+        notifyDenied({ userId: snapshot.user.id, kind: 'role', code: 'FORBIDDEN', required: roles })
         throw new AccessDeniedError('Missing required role', 'FORBIDDEN')
       }
+
+      notifyGranted({ userId: snapshot.user.id, kind: 'role', required: roles })
+
+      return handler(snapshot, ...args)
+    }
+  }
+
+  // Route parallel of protect/protectRole/protectAuth: gates a handler on a
+  // route created with defineRoutes (its permissions and roles).
+  function protectRoute<TArgs extends unknown[], TResult>(
+    route: AuthzRoute<Record<string, unknown>, TPermissions>,
+    handler: (context: AuthzSnapshot<TUser>, ...args: TArgs) => Awaitable<TResult>,
+    guardOptions?: GuardOptions
+  ) {
+    return async (...args: TArgs) => {
+      const snapshot = await guardSnapshot('route', route, guardOptions)
+      const allowed =
+        hasMatchingRole(snapshot.roles, route.roles, route.match) &&
+        hasPermissions(snapshot.permissions, route.permissions as PermissionInput | undefined)
+
+      if (!allowed) {
+        notifyDenied({
+          userId: snapshot.user.id,
+          kind: 'route',
+          code: 'FORBIDDEN',
+          required: route,
+        })
+        throw new AccessDeniedError('Missing required route access', 'FORBIDDEN')
+      }
+
+      notifyGranted({ userId: snapshot.user.id, kind: 'route', required: route })
 
       return handler(snapshot, ...args)
     }
@@ -366,7 +691,10 @@ export function createAuthz<
     handler: (context: AuthzSnapshot<TUser>, ...args: TArgs) => Awaitable<TResult>,
     guardOptions?: GuardOptions
   ) {
-    return async (...args: TArgs) => handler(await getSnapshot(guardOptions), ...args)
+    return async (...args: TArgs) => {
+      await requireSession()
+      return handler(await getSnapshot(guardOptions), ...args)
+    }
   }
 
   async function listRoles() {
@@ -601,22 +929,34 @@ export function createAuthz<
 
   return {
     getSession,
-    requireAuth,
+    requireAuth: requireSession,
     getSnapshot,
+    authorize,
     invalidateUser,
     invalidateUsers,
     invalidateRole,
     can,
+    canEach,
+    canAny,
+    canAll,
+    when,
+    missingPermissions,
+    filterByPermission: filterAllowed,
+    listPermissions,
     require: requirePermission,
     requirePermission,
+    requireAny,
     hasRole,
+    hasRoleEach,
     requireRole,
     canAccessRoute,
     requireRoute,
     protect,
     protectPermission: protect,
     protectRole,
+    protectRoute,
     protectAuth,
+    validateRolePermissions,
     listRoles,
     createRole,
     updateRole,
@@ -625,3 +965,8 @@ export function createAuthz<
     removeRole,
   }
 }
+
+export type Authz<
+  TUser extends AuthzUser = AuthzUser,
+  TPermissions extends PermissionInput = PermissionInput,
+> = ReturnType<typeof createAuthz<TUser, TPermissions>>

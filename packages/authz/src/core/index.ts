@@ -1,8 +1,12 @@
 export type {
   AuthzAdapter,
   AuthzCache,
+  AuthzCheckKind,
+  AuthzDeniedEvent,
+  AuthzGrantedEvent,
   AuthzMutationCode,
   AuthzMutationResult,
+  AuthzPermissionIssue,
   AuthzRole,
   AuthzRoleResult,
   AuthzRoute,
@@ -18,6 +22,8 @@ export type {
 } from './types'
 export {
   definePermissions,
+  filterByPermission,
+  getMissingPermissions,
   hasPermissions,
   mergePermissions,
   normalizePermissions,

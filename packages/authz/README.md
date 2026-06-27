@@ -136,6 +136,78 @@ const snapshot = await authz.getSnapshot()
 const canExportInvoices = await authz.can({ invoice: ['export'] })
 ```
 
+### Check Many Permissions At Once
+
+`can` requires every action inside a single requirement (AND). When you need a page full of independent flags, reach for `canEach` instead of a positional `Promise.all`. It resolves the snapshot once and returns a record keyed exactly like the input, so you destructure by name:
+
+```ts
+const { canSale, canPurchase, canPayable, canEarning } = await authz.canEach({
+  canSale: { sale: ['read'] },
+  canPurchase: { purchase: ['read'] },
+  canPayable: { payable: ['read'] },
+  canEarning: { earning: ['read'] },
+})
+```
+
+Use `canAny` for OR logic: it passes when the user satisfies any one of the listed requirements. `requireAny` is the throwing guard variant.
+
+```ts
+// passes if the user has sale:read OR purchase:read OR receivable:read
+const canSeeMoney = await authz.canAny([
+  { sale: ['read'] },
+  { purchase: ['read'] },
+  { receivable: ['read'] },
+])
+
+await authz.requireAny([{ sale: ['delete'] }, { invoice: ['export'] }])
+```
+
+`canEach`, `canAny`, and `requireAny` all resolve the snapshot a single time, so batching checks costs no extra database or cache reads.
+
+`missingPermissions` returns the resource/action pairs the user is still missing (an empty object means fully allowed), for precise error messages or audit logs. `filterByPermission` keeps the items whose requirement the user satisfies, and `hasRoleEach` is the role parallel of `canEach`.
+
+```ts
+const missing = await authz.missingPermissions({ order: ['read', 'delete'] })
+// e.g. { order: ['delete'] }  ->  {} when allowed
+
+const visibleWidgets = await authz.filterByPermission(widgets, (widget) => widget.permissions)
+
+const { isManager, isAdmin } = await authz.hasRoleEach({
+  isManager: 'orders_manager',
+  isAdmin: 'admin',
+})
+```
+
+The same batch/OR helpers exist as client hooks (`useCanEach`, `useCanAny`, `useHasRoleEach`), and the `Can` component takes an `any` prop for OR in JSX:
+
+```tsx
+'use client'
+
+import { Can, useCanEach, useCanAny } from './authz-client'
+
+export function MoneySection() {
+  const { canSale, canPurchase } = useCanEach({
+    canSale: { sale: ['read'] },
+    canPurchase: { purchase: ['read'] },
+  })
+  const canSeeMoney = useCanAny([{ sale: ['read'] }, { purchase: ['read'] }])
+
+  if (!canSeeMoney) return null
+
+  return (
+    <>
+      {canSale && <SalesCard />}
+      {canPurchase && <PurchaseCard />}
+
+      {/* OR in JSX: render if export OR delete */}
+      <Can any={[{ invoice: ['export'] }, { order: ['delete'] }]}>
+        <ExportButton />
+      </Can>
+    </>
+  )
+}
+```
+
 Guards throw `AccessDeniedError` with a `code` of `'UNAUTHORIZED'` (no session) or `'FORBIDDEN'` (missing permissions or roles). When catching it, use `AccessDeniedError.is(error)` instead of `instanceof`: package managers can install duplicate copies of this package (for example when workspaces resolve different peer dependencies), and an error thrown by one copy is not an `instanceof` the other copy's class. `AccessDeniedError.is` also matches errors from a duplicate copy.
 
 ```ts
@@ -188,6 +260,91 @@ const deleted = await authz.deleteRole(roleId)
 if (!deleted.success) {
   // deleted.code: 'ROLE_NOT_FOUND' | 'ROLE_DELETE_FAILED' | 'CACHE_INVALIDATION_FAILED'
   return { error: deleted.message }
+}
+```
+
+### Run Conditional Work In One Action
+
+Inside a server action that runs several Prisma queries, each gated on a different permission, `authorize()` resolves the snapshot once and hands back synchronous checkers. No repeated awaits, no extra database or cache reads.
+
+```ts
+'use server'
+
+import { authz } from './authz'
+import { db } from './db'
+
+export async function loadDashboard() {
+  const auth = await authz.authorize()
+
+  const orders = auth.can({ order: ['read'] }) ? await db.order.findMany() : []
+  const invoices = await auth.when({ invoice: ['read'] }, () => db.invoice.findMany())
+  const isAdmin = auth.hasRole('admin')
+
+  return { user: auth.user, orders, invoices, isAdmin }
+}
+```
+
+`auth` exposes `user`, `roles`, `permissions`, and synchronous `can`, `canAny`, `canAll`, `hasRole`, `missingPermissions`, and `when`. For a single one-off check, `authz.when(req, run, fallback?)` resolves the snapshot and runs `run` only when allowed:
+
+```ts
+const drafts = await authz.when({ order: ['read'] }, () => db.order.findMany(), [])
+```
+
+Use `protectRoute` to gate a whole handler on a `defineRoutes` route (its permissions and roles), mirroring `protect` / `protectRole` / `protectAuth`:
+
+```ts
+export const loadOrders = authz.protectRoute(routes.orders, async ({ user }) => {
+  return db.order.findMany({ where: { tenantId: user.tenantId } })
+})
+```
+
+### Audit Authorization Decisions
+
+Pass `onDenied` and `onGranted` to observe throwing guards (`require*`, `protect*`) for audit logs and telemetry. Non-throwing checks (`can`, `canEach`, …) stay silent. Hook errors are caught and logged, never propagated into your guarded code.
+
+```ts
+export const authz = createAuthz({
+  permissions,
+  getSession,
+  adapter,
+  onDenied: ({ userId, kind, code, required }) => {
+    logger.warn('authz.denied', { userId, kind, code, required })
+  },
+  onGranted: ({ userId, kind, required }) => {
+    metrics.increment('authz.granted', { kind })
+  },
+})
+```
+
+`kind` is `'permission' | 'role' | 'route' | 'auth'`. A missing session reports `code: 'UNAUTHORIZED'` (no `userId`); a failed permission, role, or route check reports `code: 'FORBIDDEN'`.
+
+### Detect Catalog Drift
+
+Permissions live in code, but role permissions live in the database as JSON. Renaming a resource in the catalog silently strands the roles that still reference the old name. `validateRolePermissions` flags any stored permission outside the catalog (wildcards always pass), so a seed, migration, or admin screen can surface the drift.
+
+```ts
+for (const role of await authz.listRoles()) {
+  const issues = authz.validateRolePermissions(role)
+
+  if (issues.length > 0) {
+    // [{ resource: 'order', action: 'destroy', reason: 'unknown-action' }]
+    console.warn(`Role "${role.name}" has stale permissions`, issues)
+  }
+}
+```
+
+### Type The Authz Instance
+
+Annotate code that receives the configured helper without `ReturnType` gymnastics:
+
+```ts
+import type { Authz } from '@zxkit/authz'
+import type { permissions } from './permissions'
+
+type AppAuthz = Authz<{ id: string; tenantId: string }, typeof permissions>
+
+export function createOrderService(authz: AppAuthz) {
+  // ...
 }
 ```
 
@@ -481,67 +638,84 @@ This creates `.agents/skills/authz/SKILL.md` at the project root. Use `--dry-run
 
 ### Core Helpers
 
-| Helper                     | Import path           | Description                                    |
-| -------------------------- | --------------------- | ---------------------------------------------- |
-| `definePermissions`        | `@zxkit/authz`        | Defines the typed permission catalog           |
-| `createAuthz`              | `@zxkit/authz`        | Creates server authorization helpers           |
-| `createAuthzClient`        | `@zxkit/authz/client` | Creates typed React helpers                    |
-| `defineRoutes`             | `@zxkit/authz`        | Defines typed route metadata                   |
-| `defineNavigation`         | `@zxkit/authz`        | Defines typed navigation trees from routes     |
-| `getAllowedNavigation`     | `@zxkit/authz`        | Filters navigation outside React               |
-| `getNavigationBreadcrumb`  | `@zxkit/authz`        | Resolves the allowed breadcrumb for a pathname |
-| `getCurrentNavigationNode` | `@zxkit/authz`        | Resolves the current allowed navigation node   |
-| `memoryCache`              | `@zxkit/authz`        | Creates an in-memory snapshot cache            |
-| `redisCache`               | `@zxkit/authz`        | Creates a Redis-backed snapshot cache          |
-| `prismaAuthzAdapter`       | `@zxkit/authz/prisma` | Creates the Prisma storage adapter             |
-| `createAuthzProxy`         | `@zxkit/authz/next`   | Creates a Next.js proxy route guard            |
-| `AccessDeniedError`        | `@zxkit/authz`        | Error thrown by `require` and `protect` calls  |
-| `createNoopCache`          | `@zxkit/authz`        | Disables cache behavior behind the cache API   |
+| Helper                     | Import path           | Description                                      |
+| -------------------------- | --------------------- | ------------------------------------------------ |
+| `definePermissions`        | `@zxkit/authz`        | Defines the typed permission catalog             |
+| `getMissingPermissions`    | `@zxkit/authz`        | Returns the missing subset of a requirement      |
+| `filterByPermission`       | `@zxkit/authz`        | Filters a list by a per-item permission selector |
+| `createAuthz`              | `@zxkit/authz`        | Creates server authorization helpers             |
+| `createAuthzClient`        | `@zxkit/authz/client` | Creates typed React helpers                      |
+| `defineRoutes`             | `@zxkit/authz`        | Defines typed route metadata                     |
+| `defineNavigation`         | `@zxkit/authz`        | Defines typed navigation trees from routes       |
+| `getAllowedNavigation`     | `@zxkit/authz`        | Filters navigation outside React                 |
+| `getNavigationBreadcrumb`  | `@zxkit/authz`        | Resolves the allowed breadcrumb for a pathname   |
+| `getCurrentNavigationNode` | `@zxkit/authz`        | Resolves the current allowed navigation node     |
+| `memoryCache`              | `@zxkit/authz`        | Creates an in-memory snapshot cache              |
+| `redisCache`               | `@zxkit/authz`        | Creates a Redis-backed snapshot cache            |
+| `prismaAuthzAdapter`       | `@zxkit/authz/prisma` | Creates the Prisma storage adapter               |
+| `createAuthzProxy`         | `@zxkit/authz/next`   | Creates a Next.js proxy route guard              |
+| `AccessDeniedError`        | `@zxkit/authz`        | Error thrown by `require` and `protect` calls    |
+| `createNoopCache`          | `@zxkit/authz`        | Disables cache behavior behind the cache API     |
 
 ### Server Methods
 
-| Method              | Description                                                    |
-| ------------------- | -------------------------------------------------------------- |
-| `getSession()`      | Returns the current session from your `getSession` callback    |
-| `requireAuth()`     | Requires an authenticated session                              |
-| `getSnapshot()`     | Returns `{ user, roles, permissions }` for the current user    |
-| `can(permissions)`  | Checks whether the current user has every required permission  |
-| `require(...)`      | Throws `AccessDeniedError` when permissions are missing        |
-| `hasRole(...)`      | Checks whether the current user has required roles             |
-| `requireRole(...)`  | Throws `AccessDeniedError` when roles are missing              |
-| `canAccessRoute()`  | Checks a route created with `defineRoutes`                     |
-| `requireRoute()`    | Requires access to a route created with `defineRoutes`         |
-| `protect(...)`      | Wraps a handler with a permission check                        |
-| `protectRole(...)`  | Wraps a handler with a role check                              |
-| `protectAuth(...)`  | Wraps a handler with an auth-only check                        |
-| `listRoles()`       | Lists all stored roles                                         |
-| `createRole()`      | Creates a role and returns `{ success, message, role }`        |
-| `updateRole()`      | Updates a role, invalidates snapshots, returns a result object |
-| `deleteRole()`      | Deletes a role, invalidates snapshots, returns a result object |
-| `assignRole()`      | Assigns a role and invalidates that user's snapshot            |
-| `removeRole()`      | Removes a role assignment and invalidates that user's snapshot |
-| `invalidateUser()`  | Deletes one user's cached snapshot                             |
-| `invalidateUsers()` | Deletes multiple user snapshots                                |
-| `invalidateRole()`  | Deletes snapshots for users assigned to a role when supported  |
+| Method                              | Description                                                     |
+| ----------------------------------- | --------------------------------------------------------------- |
+| `getSession()`                      | Returns the current session from your `getSession` callback     |
+| `requireAuth()`                     | Requires an authenticated session                               |
+| `getSnapshot()`                     | Returns `{ user, roles, permissions }` for the current user     |
+| `authorize()`                       | Resolves one snapshot, returns synchronous checkers bound to it |
+| `can(permissions)`                  | Checks whether the current user has every required permission   |
+| `canEach(checks)`                   | Resolves many keyed permission checks against one snapshot      |
+| `canAny(reqs)`                      | Passes when the user satisfies any one requirement (OR)         |
+| `canAll(reqs)`                      | Passes when the user satisfies every requirement (AND)          |
+| `when(req, run, fb?)`               | Runs `run` only when allowed, else returns the fallback         |
+| `missingPermissions(req)`           | Returns the resource/action pairs the user is missing           |
+| `filterByPermission(items, select)` | Keeps items whose requirement the user satisfies                |
+| `listPermissions()`                 | Returns the current user's permission map                       |
+| `require(...)`                      | Throws `AccessDeniedError` when permissions are missing         |
+| `requireAny(reqs)`                  | Throws `AccessDeniedError` when no requirement matches          |
+| `hasRoleEach(checks)`               | Resolves many keyed role checks against one snapshot            |
+| `protectRoute(route, handler)`      | Wraps a handler with a `defineRoutes` route check               |
+| `validateRolePermissions(role)`     | Flags stored permissions outside the catalog                    |
+| `hasRole(...)`                      | Checks whether the current user has required roles              |
+| `requireRole(...)`                  | Throws `AccessDeniedError` when roles are missing               |
+| `canAccessRoute()`                  | Checks a route created with `defineRoutes`                      |
+| `requireRoute()`                    | Requires access to a route created with `defineRoutes`          |
+| `protect(...)`                      | Wraps a handler with a permission check                         |
+| `protectRole(...)`                  | Wraps a handler with a role check                               |
+| `protectAuth(...)`                  | Wraps a handler with an auth-only check                         |
+| `listRoles()`                       | Lists all stored roles                                          |
+| `createRole()`                      | Creates a role and returns `{ success, message, role }`         |
+| `updateRole()`                      | Updates a role, invalidates snapshots, returns a result object  |
+| `deleteRole()`                      | Deletes a role, invalidates snapshots, returns a result object  |
+| `assignRole()`                      | Assigns a role and invalidates that user's snapshot             |
+| `removeRole()`                      | Removes a role assignment and invalidates that user's snapshot  |
+| `invalidateUser()`                  | Deletes one user's cached snapshot                              |
+| `invalidateUsers()`                 | Deletes multiple user snapshots                                 |
+| `invalidateRole()`                  | Deletes snapshots for users assigned to a role when supported   |
 
 ### Client Helpers
 
-| Helper                     | Description                                                |
-| -------------------------- | ---------------------------------------------------------- |
-| `AuthzProvider`            | Provides the current authorization snapshot to React       |
-| `Can`                      | Renders children when permissions match                    |
-| `Guard`                    | Renders children when route-style requirements match       |
-| `Role`                     | Renders children when roles match                          |
-| `useCan`                   | Checks typed permissions from the current snapshot         |
-| `useAllowedRoutes`         | Filters route definitions by the current snapshot          |
-| `useAllowedNavigation`     | Filters typed navigation trees by the current snapshot     |
-| `useNavigationBreadcrumb`  | Resolves the allowed breadcrumb for a pathname             |
-| `useCurrentNavigationNode` | Resolves the current allowed navigation node               |
-| `useCanAccessRoute`        | Checks one route definition from the current snapshot      |
-| `useHasRole`               | Checks roles from the current snapshot                     |
-| `useRoles`                 | Returns the current role names                             |
-| `useAuthzSnapshot`         | Returns the full provider snapshot                         |
-| `useAuthzRefresh`          | Updates the provider snapshot when your app gets a new one |
+| Helper                     | Description                                                 |
+| -------------------------- | ----------------------------------------------------------- |
+| `AuthzProvider`            | Provides the current authorization snapshot to React        |
+| `Can`                      | Renders children when permissions match (`any` prop for OR) |
+| `Guard`                    | Renders children when route-style requirements match        |
+| `Role`                     | Renders children when roles match                           |
+| `useCan`                   | Checks typed permissions from the current snapshot          |
+| `useCanEach`               | Resolves many keyed permission checks from the snapshot     |
+| `useCanAny`                | Passes when any one requirement matches (OR)                |
+| `useHasRoleEach`           | Resolves many keyed role checks from the snapshot           |
+| `useAllowedRoutes`         | Filters route definitions by the current snapshot           |
+| `useAllowedNavigation`     | Filters typed navigation trees by the current snapshot      |
+| `useNavigationBreadcrumb`  | Resolves the allowed breadcrumb for a pathname              |
+| `useCurrentNavigationNode` | Resolves the current allowed navigation node                |
+| `useCanAccessRoute`        | Checks one route definition from the current snapshot       |
+| `useHasRole`               | Checks roles from the current snapshot                      |
+| `useRoles`                 | Returns the current role names                              |
+| `useAuthzSnapshot`         | Returns the full provider snapshot                          |
+| `useAuthzRefresh`          | Updates the provider snapshot when your app gets a new one  |
 
 ## Permission Matching
 
