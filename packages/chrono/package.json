@@ -1,6 +1,6 @@
 {
   "name": "@zxkit/chrono",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Zero-dependency calendar dates and timezone-aware instants: branded PlainDate, DATE column semantics, and a total zone API that never throws",
   "author": "nxtvoid",
   "license": "MIT",
