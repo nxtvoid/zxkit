@@ -47,6 +47,17 @@ const COMPONENTS_OPTIONS: ComponentOption[] = [
     link: '/authz',
     command: 'bun i @zxkit/authz',
   },
+  {
+    title: '@zxkit/chrono',
+    description:
+      'Zero-dependency calendar dates and timezone-aware instants. Branded PlainDate, DATE column semantics, and DST-safe zone helpers behind a total API that never throws.',
+    image: {
+      light: '/chrono-light.webp',
+      dark: '/chrono-dark.webp',
+    },
+    link: '/chrono',
+    command: 'bun i @zxkit/chrono',
+  },
 ]
 
 export { COMPONENTS_OPTIONS, type ComponentOption }

@@ -1,0 +1,63 @@
+{
+  "name": "@zxkit/chrono",
+  "version": "1.0.0",
+  "description": "Zero-dependency calendar dates and timezone-aware instants: branded PlainDate, DATE column semantics, and a total zone API that never throws",
+  "author": "nxtvoid",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nxtvoid/zxkit",
+    "directory": "packages/chrono"
+  },
+  "keywords": [
+    "date",
+    "datetime",
+    "calendar",
+    "timezone",
+    "plain-date",
+    "date-only",
+    "dst",
+    "intl"
+  ],
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "dev": "tsdown --watch",
+    "build": "tsdown",
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "test": "node scripts/test-tz-matrix.mjs"
+  },
+  "bugs": {
+    "url": "https://github.com/nxtvoid/zxkit/issues"
+  },
+  "homepage": "https://github.com/nxtvoid/zxkit/tree/main/packages/chrono#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "@workspace/eslint-config": "*",
+    "@workspace/typescript-config": "*",
+    "eslint": "^9.32.0",
+    "fast-check": "^4.8.0",
+    "tsdown": "0.21.10",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
