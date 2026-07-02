@@ -47,6 +47,9 @@
     "url": "https://github.com/nxtvoid/zxkit/issues"
   },
   "homepage": "https://github.com/nxtvoid/zxkit/tree/main/packages/chrono#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@types/node": "^25.3.0",
     "@workspace/eslint-config": "*",
