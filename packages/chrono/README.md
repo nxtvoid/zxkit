@@ -1,6 +1,18 @@
-# `@zxkit/chrono`
+<p align="center">
+  <img src="https://raw.githubusercontent.com/nxtvoid/zxkit/main/packages/chrono/github.png" alt="chrono banner" width="100%" />
+</p>
 
-Zero-dependency calendar dates and timezone-aware instants, built on native `Intl`.
+<h1 align="center">@zxkit/chrono</h1>
+
+<p align="center">
+  Zero-dependency calendar dates and timezone-aware instants, built on native <code>Intl</code>.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@zxkit/chrono"><img src="https://img.shields.io/npm/v/@zxkit/chrono.svg" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@zxkit/chrono"><img src="https://img.shields.io/npm/dm/@zxkit/chrono.svg" alt="npm downloads" /></a>
+  <a href="https://www.npmjs.com/package/@zxkit/chrono"><img src="https://img.shields.io/npm/l/@zxkit/chrono.svg" alt="license" /></a>
+</p>
 
 **The API is total — it never throws.** Invalid input at the boundary returns `null`; inside the domain every operation returns a valid value. TypeScript forces you to handle the `null` exactly once, where the data enters. After that, failure is unrepresentable.
 
