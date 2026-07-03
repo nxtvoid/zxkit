@@ -39,7 +39,7 @@ const COMPONENTS_OPTIONS: ComponentOption[] = [
     title: '@zxkit/authz',
     description:
       'Typed authorization helpers for roles, permissions, and guards. Easily manage and secure your React and Next.js applications with confidence.',
-    version: '1.0.0',
+    version: '3.1.0',
     image: {
       light: '/authz-light.webp',
       dark: '/authz-dark.webp',
@@ -51,6 +51,7 @@ const COMPONENTS_OPTIONS: ComponentOption[] = [
     title: '@zxkit/chrono',
     description:
       'Zero-dependency calendar dates and timezone-aware instants. Branded PlainDate, DATE column semantics, and DST-safe zone helpers behind a total API that never throws.',
+    version: '1.1.0',
     image: {
       light: '/chrono-light.webp',
       dark: '/chrono-dark.webp',
