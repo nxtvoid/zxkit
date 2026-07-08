@@ -6,6 +6,18 @@ export type AuthzProxyAuth = {
   signIn: string
   afterSignIn: string
   forbidden: string
+  /**
+   * Preserve the requested path when redirecting an unauthenticated user to
+   * `signIn`, so they can be sent back after signing in.
+   *
+   * - `false` / omitted: disabled (bare `signIn` redirect).
+   * - `true`: enabled with the default query param `callbackUrl`.
+   * - string: enabled with a custom query param name.
+   *
+   * When enabled, a signed-in user hitting a `guestOnly` route is redirected to
+   * the (validated, internal) `returnTo` value instead of `afterSignIn`.
+   */
+  returnTo?: boolean | string
 }
 
 export type AuthzGuestOnlyRoute =

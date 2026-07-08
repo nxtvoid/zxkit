@@ -172,6 +172,16 @@ describe('arithmetic', () => {
     expect(dayOfWeek(pd('2026-07-05'))).toBe(7)
   })
 
+  it('week boundaries clamp at the edges of the representable range', () => {
+    // 0001-01-01 is a Monday; its Sunday-started week begins in year 0, which
+    // addDays cannot represent, so it returns its input unchanged.
+    expect(startOfWeek(pd('0001-01-01'), 0)).toBe('0001-01-01')
+    expect(startOfWeek(pd('0001-01-01'), 1)).toBe('0001-01-01')
+    // 9999-12-31 is a Friday; its Monday-started week ends in year 10000, so
+    // endOfWeek degrades to the clamped start of that week.
+    expect(endOfWeek(pd('9999-12-31'), 1)).toBe('9999-12-27')
+  })
+
   it('eachDay is inclusive and empty when from > to', () => {
     expect(eachDay(pd('2026-06-29'), pd('2026-07-01'))).toEqual([
       '2026-06-29',
