@@ -580,6 +580,46 @@ Routes with `permissions` or `roles` require those permissions or roles. Multipl
 
 `auth.forbidden` and `auth.afterSignIn` are validated when they point inside a protected area. They must resolve to an auth-only route, not a route that can deny permissions again.
 
+#### Return To The Requested Page
+
+By default an unauthenticated user is redirected to a bare `signIn` path, so signing in always lands on `afterSignIn`. Set `auth.returnTo` to preserve the page the user actually asked for:
+
+```ts
+export const proxy = createAuthzProxy({
+  authz,
+  auth: {
+    signIn: '/login',
+    afterSignIn: '/hub',
+    forbidden: '/hub',
+    returnTo: true, // or a custom query param name, e.g. 'next'
+  },
+  guestOnly: ['/login'],
+  protected: [{ matcher: '/hub/:path*', routes }],
+})
+```
+
+- `returnTo: true` appends the requested path as `?callbackUrl=<path>` (custom name via a string, e.g. `returnTo: 'next'` → `?next=<path>`).
+- Visiting `/hub/cash-register` without a session redirects to `/login?callbackUrl=%2Fhub%2Fcash-register`.
+- After signing in, when the now-authenticated user hits a `guestOnly` route, the proxy redirects to the `callbackUrl` value instead of `afterSignIn`.
+- Only added on the "no session" (`UNAUTHORIZED`) redirect. A `FORBIDDEN` redirect (signed in, missing permissions or roles) still goes to `forbidden` with no `callbackUrl`, so users are not bounced back into a page they cannot access.
+- The `callbackUrl` value is validated as an internal path. Anything that could resolve to another host (`//evil.com`, `/\evil.com`, encoded tab/newline tricks, `/..//evil.com`) is rejected and falls back to `afterSignIn`, so it cannot be abused as an open redirect.
+
+Your login page can also read the query param directly and redirect there after a successful sign-in, if your auth flow does not route back through the proxy. Do not pass the raw query value to `router.push` or your auth library — that reintroduces the open redirect the proxy guards against. Use `sanitizeReturnTo`, which applies the same validation:
+
+```tsx
+'use client'
+
+import { useSearchParams } from 'next/navigation'
+import { sanitizeReturnTo } from '@zxkit/authz/next'
+
+export function LoginForm() {
+  const searchParams = useSearchParams()
+  const callbackURL = sanitizeReturnTo(searchParams.get('callbackUrl'), '/hub')
+
+  // e.g. authClient.signIn.email({ email, password, callbackURL })
+}
+```
+
 ### Use Redis Cache
 
 Cache is optional and pluggable. Use memory cache for local development and Redis for production deployments with multiple instances.
