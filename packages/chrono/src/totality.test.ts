@@ -123,6 +123,10 @@ describe('totality: round-trips and arithmetic laws', () => {
     fc.assert(
       fc.property(arbPlainDate, arbWeekDay, (pd, w) => {
         const start = startOfWeek(pd, w)
+        const back = (toUtcMidnight(pd).getUTCDay() - w + 7) % 7
+        // The week containing the first days of year 1 starts before the
+        // representable range; addDays clamps by returning pd unchanged.
+        if (diffDays(pd, plainDate(1, 1, 1)!) < back) return start === pd
         const isoOfW = ((w + 6) % 7) + 1
         return dayOfWeek(start) === isoOfW && start <= pd && diffDays(pd, start) < 7
       })
