@@ -9,6 +9,7 @@ import {
   getGuestOnlyRedirect,
   matchesAny,
 } from './proxy-routes'
+import { appendReturnTo, readReturnTo, resolveReturnToParam } from './return-to'
 import {
   AuthzProxyConfigError,
   type AuthzProxyOptions,
@@ -32,12 +33,24 @@ async function requireRuleAccess(authz: ReturnType<typeof createAuthz>, rule: Re
   await authz.requireRoute(rule.route)
 }
 
-function getRedirectTarget(input: { error: AccessDeniedError; signIn: string; forbidden: string }) {
-  if (input.error.code === 'UNAUTHORIZED') {
+function getRedirectTarget(input: {
+  error: AccessDeniedError
+  request: NextRequest
+  signIn: string
+  forbidden: string
+  returnToParam: string | null
+}) {
+  if (input.error.code !== 'UNAUTHORIZED') {
+    return input.forbidden
+  }
+
+  if (!input.returnToParam) {
     return input.signIn
   }
 
-  return input.forbidden
+  const returnPath = input.request.nextUrl.pathname + input.request.nextUrl.search
+
+  return appendReturnTo(input.signIn, input.returnToParam, returnPath)
 }
 
 async function handleRule(input: {
@@ -46,6 +59,7 @@ async function handleRule(input: {
   rule: ResolvedRouteRule
   signIn: string
   forbidden: string
+  returnToParam: string | null
 }) {
   try {
     await requireRuleAccess(input.authz, input.rule)
@@ -59,8 +73,10 @@ async function handleRule(input: {
       input.request,
       getRedirectTarget({
         error,
+        request: input.request,
         signIn: input.signIn,
         forbidden: input.forbidden,
+        returnToParam: input.returnToParam,
       })
     )
   }
@@ -72,6 +88,7 @@ async function handleProtectedZone(input: {
   zone: ResolvedProtectedZone
   signIn: string
   forbidden: string
+  returnToParam: string | null
 }) {
   const pathname = input.request.nextUrl.pathname
   const rule = findRouteRule(input.zone.routeRules, pathname)
@@ -83,6 +100,7 @@ async function handleProtectedZone(input: {
       rule,
       signIn: input.signIn,
       forbidden: input.forbidden,
+      returnToParam: input.returnToParam,
     })
   }
 
@@ -97,8 +115,10 @@ async function handleProtectedZone(input: {
       input.request,
       getRedirectTarget({
         error,
+        request: input.request,
         signIn: input.signIn,
         forbidden: input.forbidden,
+        returnToParam: input.returnToParam,
       })
     )
   }
@@ -113,6 +133,7 @@ async function handleProtectedZone(input: {
 export function createAuthzProxy(options: AuthzProxyOptions) {
   const config = resolveProxyConfig(options)
   const { auth, publicPatterns, guestOnlyRoutes, protectedZones } = config
+  const returnToParam = resolveReturnToParam(auth.returnTo)
 
   return async function authzProxy(request: NextRequest) {
     const pathname = request.nextUrl.pathname
@@ -122,8 +143,12 @@ export function createAuthzProxy(options: AuthzProxyOptions) {
       const session = await options.authz.getSession()
       const target = getGuestOnlyRedirect(guestOnlyRoute, auth.afterSignIn)
 
-      if (session && target) {
-        return redirect(request, target)
+      if (session) {
+        const returnTarget = (returnToParam ? readReturnTo(request, returnToParam) : null) ?? target
+
+        if (returnTarget) {
+          return redirect(request, returnTarget)
+        }
       }
 
       return NextResponse.next()
@@ -142,6 +167,7 @@ export function createAuthzProxy(options: AuthzProxyOptions) {
         zone: protectedZone,
         signIn: auth.signIn,
         forbidden: auth.forbidden,
+        returnToParam,
       })
     }
 
