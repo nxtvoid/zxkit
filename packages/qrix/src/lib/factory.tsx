@@ -1,7 +1,7 @@
 'use client'
 
 import type React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import {
   generateQRCodeSVG,
   downloadQRCodePNG,
@@ -9,6 +9,9 @@ import {
   copyQRCodeToClipboard,
   type QRCodeOptions,
   type ErrorCorrectionLevel,
+  type DotStyle,
+  type MarkerCenterStyle,
+  type MarkerBorderStyle,
 } from './qr-svg'
 
 export interface QRCodeSVGProps {
@@ -32,10 +35,18 @@ export interface QRCodeSVGProps {
   errorCorrectionLevel?: ErrorCorrectionLevel
   /** Quiet zone size in modules */
   quietZone?: number
+  /** Data module shape */
+  dotStyle?: DotStyle
+  /** Finder pattern center shape */
+  markerCenterStyle?: MarkerCenterStyle
+  /** Finder pattern border shape */
+  markerBorderStyle?: MarkerBorderStyle
   /** Additional CSS class */
   className?: string
   /** Inline styles */
   style?: React.CSSProperties
+  /** Rendered instead of the default "Invalid QR" text when generation fails */
+  errorFallback?: React.ReactNode
 }
 
 /**
@@ -52,52 +63,38 @@ export function QRCodeSVG({
   logoBackgroundColor = '#ffffff',
   errorCorrectionLevel = 'H',
   quietZone = 4,
+  dotStyle = 'square',
+  markerCenterStyle = 'square',
+  markerBorderStyle = 'square',
   className,
   style,
+  errorFallback,
 }: QRCodeSVGProps) {
-  const [svgContent, setSvgContent] = useState<string | null>(null)
-  const [error, setError] = useState<boolean>(false)
-  const requestIdRef = useRef(0)
-
-  useEffect(() => {
+  const { svgContent, error } = useMemo(() => {
     if (!value) {
-      setSvgContent(null)
-      setError(false)
-      return
+      return { svgContent: null, error: false }
     }
 
-    let cancelled = false
-    const requestId = ++requestIdRef.current
-
-    generateQRCodeSVG({
-      value,
-      size,
-      fgColor,
-      bgColor,
-      logoUrl,
-      logoSize,
-      logoPadding,
-      logoBackgroundColor,
-      errorCorrectionLevel,
-      quietZone,
-    })
-      .then((svg) => {
-        if (!cancelled && requestId === requestIdRef.current) {
-          setSvgContent(svg)
-          setError(false)
-        }
+    try {
+      const svg = generateQRCodeSVG({
+        value,
+        size,
+        fgColor,
+        bgColor,
+        logoUrl,
+        logoSize,
+        logoPadding,
+        logoBackgroundColor,
+        errorCorrectionLevel,
+        quietZone,
+        dotStyle,
+        markerCenterStyle,
+        markerBorderStyle,
       })
-      .catch((err) => {
-        console.error('QR Code generation error:', err)
-
-        if (!cancelled && requestId === requestIdRef.current) {
-          setError(true)
-          setSvgContent(null)
-        }
-      })
-
-    return () => {
-      cancelled = true
+      return { svgContent: svg, error: false }
+    } catch (err) {
+      console.error('QR Code generation error:', err)
+      return { svgContent: null, error: true }
     }
   }, [
     value,
@@ -110,6 +107,9 @@ export function QRCodeSVG({
     logoBackgroundColor,
     errorCorrectionLevel,
     quietZone,
+    dotStyle,
+    markerCenterStyle,
+    markerBorderStyle,
   ])
 
   if (error || !svgContent) {
@@ -126,7 +126,8 @@ export function QRCodeSVG({
           ...style,
         }}
       >
-        {error && <span style={{ color: fgColor, fontSize: 12 }}>Invalid QR</span>}
+        {error &&
+          (errorFallback ?? <span style={{ color: fgColor, fontSize: 12 }}>Invalid QR</span>)}
       </div>
     )
   }
@@ -143,4 +144,4 @@ export function QRCodeSVG({
 
 // Re-export utilities for convenience
 export { generateQRCodeSVG, downloadQRCodePNG, downloadQRCodeSVG, copyQRCodeToClipboard }
-export type { QRCodeOptions, ErrorCorrectionLevel }
+export type { QRCodeOptions, ErrorCorrectionLevel, DotStyle, MarkerCenterStyle, MarkerBorderStyle }
