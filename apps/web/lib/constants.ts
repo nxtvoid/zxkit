@@ -11,3 +11,14 @@ export const DEFAULT_COLORS = [
   '#2563eb',
   '#9333ea',
 ]
+
+export const DEFAULT_BG_COLORS = [
+  '#ffffff',
+  '#f8fafc',
+  '#f5f5f4',
+  '#fef3c7',
+  '#dcfce7',
+  '#dbeafe',
+  '#fce7f3',
+  '#e2e8f0',
+]
