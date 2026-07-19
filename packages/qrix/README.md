@@ -69,6 +69,24 @@ function App() {
 }
 ```
 
+### Custom Styles
+
+```tsx
+import { QRCodeSVG } from '@zxkit/qrix'
+
+function App() {
+  return (
+    <QRCodeSVG
+      value='https://example.com'
+      size={256}
+      dotStyle='rounded'
+      markerCenterStyle='dot'
+      markerBorderStyle='circle'
+    />
+  )
+}
+```
+
 ### Custom Colors
 
 ```tsx
@@ -114,26 +132,30 @@ function App() {
 
 ### `<QRCodeSVG />`
 
-| Prop                   | Type                       | Default      | Description                      |
-| ---------------------- | -------------------------- | ------------ | -------------------------------- |
-| `value`                | `string`                   | **required** | Content to encode in the QR code |
-| `size`                 | `number`                   | `200`        | Size in pixels                   |
-| `fgColor`              | `string`                   | `#000000`    | Foreground color                 |
-| `bgColor`              | `string`                   | `#ffffff`    | Background color                 |
-| `logoUrl`              | `string`                   | -            | URL of the logo image            |
-| `logoSize`             | `number`                   | `20`         | Logo size as percentage (0-100)  |
-| `logoPadding`          | `number`                   | `4`          | Logo padding in pixels           |
-| `logoBackgroundColor`  | `string`                   | `#ffffff`    | Logo background color            |
-| `errorCorrectionLevel` | `'L' \| 'M' \| 'Q' \| 'H'` | `H`          | Error correction level           |
-| `quietZone`            | `number`                   | `4`          | Quiet zone size in modules       |
-| `className`            | `string`                   | -            | Additional CSS class             |
-| `style`                | `CSSProperties`            | -            | Inline styles                    |
+| Prop                   | Type                                | Default      | Description                                                                    |
+| ---------------------- | ----------------------------------- | ------------ | ------------------------------------------------------------------------------ |
+| `value`                | `string`                            | **required** | Content to encode in the QR code                                               |
+| `size`                 | `number`                            | `200`        | Size in pixels                                                                 |
+| `fgColor`              | `string`                            | `#000000`    | Foreground color                                                               |
+| `bgColor`              | `string`                            | `#ffffff`    | Background color                                                               |
+| `logoUrl`              | `string`                            | -            | URL of the logo image                                                          |
+| `logoSize`             | `number`                            | `20`         | Logo size as percentage (0-100)                                                |
+| `logoPadding`          | `number`                            | `4`          | Logo padding in pixels                                                         |
+| `logoBackgroundColor`  | `string`                            | `#ffffff`    | Logo background color                                                          |
+| `errorCorrectionLevel` | `'L' \| 'M' \| 'Q' \| 'H'`          | `H`          | Error correction level                                                         |
+| `quietZone`            | `number`                            | `4`          | Quiet zone size in modules                                                     |
+| `dotStyle`             | `'square' \| 'dots' \| 'rounded'`   | `square`     | Data module shape                                                              |
+| `markerCenterStyle`    | `'square' \| 'dot'`                 | `square`     | Finder pattern center shape                                                    |
+| `markerBorderStyle`    | `'square' \| 'rounded' \| 'circle'` | `square`     | Finder pattern border shape                                                    |
+| `className`            | `string`                            | -            | Additional CSS class                                                           |
+| `style`                | `CSSProperties`                     | -            | Inline styles                                                                  |
+| `errorFallback`        | `ReactNode`                         | -            | Custom content shown when generation fails (defaults to an "Invalid QR" label) |
 
 ### Utility Functions
 
-#### `generateQRCodeSVG(options: QRCodeOptions): Promise<string>`
+#### `generateQRCodeSVG(options: QRCodeOptions): string`
 
-Generates a QR code as an SVG string.
+Generates a QR code as an SVG string, synchronously.
 
 #### `generateQRCodeDataURL(options: QRCodeOptions): Promise<string>`
 
@@ -156,7 +178,7 @@ Copies the QR code to the clipboard as a PNG image.
 | `Q`   | ~25%              | Industrial               |
 | `H`   | ~30%              | With logos (recommended) |
 
-> **Note:** When using a logo, use `H` (High) error correction to ensure the QR code remains scannable.
+> **Note:** When using a logo, use `H` (High) error correction to ensure the QR code remains scannable. If the logo area (including padding) covers more than the level's recovery capacity, a `console.warn` is emitted with a suggestion to reduce `logoSize` or raise `errorCorrectionLevel`.
 
 ## License
 

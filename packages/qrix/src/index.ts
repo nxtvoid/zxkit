@@ -8,4 +8,10 @@ export {
   downloadQRCodeSVG,
   copyQRCodeToClipboard,
 } from './lib/qr-svg'
-export type { QRCodeOptions, ErrorCorrectionLevel } from './lib/qr-svg'
+export type {
+  QRCodeOptions,
+  ErrorCorrectionLevel,
+  DotStyle,
+  MarkerCenterStyle,
+  MarkerBorderStyle,
+} from './lib/qr-svg'
