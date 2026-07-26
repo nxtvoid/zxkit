@@ -1,7 +1,10 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  entry: ['./src/index.ts'],
+  // Two independent entries: the root is agnostic of both dialog primitives and
+  // form libraries, and the react-hook-form integration lives behind its own
+  // subpath so consumers only pull the peers they actually use.
+  entry: ['./src/index.ts', './src/react-hook-form.ts'],
   format: ['esm'],
   dts: {
     sourcemap: false,

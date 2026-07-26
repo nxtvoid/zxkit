@@ -1,4 +1,3 @@
-import { FieldValues, DefaultValues, UseFormProps, UseFormReturn, useForm } from 'react-hook-form'
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 export interface WrapperProps {
@@ -31,17 +30,12 @@ type Options = {
   breakpoint?: number
 }
 
-// Portable wrapper interfaces — defined in THIS package so TypeScript can
-// reference them as '@zxkit/surface'.PreservedFormOptions etc. in declaration
-// emit, instead of needing to resolve react-hook-form through bun's internal paths.
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface PreservedFormOptions<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> extends UseFormProps<T> {}
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface PreservedFormReturn<
-  T extends Record<string, unknown> = Record<string, unknown>,
-> extends UseFormReturn<T> {}
+/**
+ * Backing store for values that must survive a mobile/desktop swap. Exposed so
+ * integrations for form libraries can be built outside this package — see
+ * `@zxkit/surface/react-hook-form` for the reference implementation.
+ */
+export type PreservedStore = Map<string, unknown>
 
 export interface ResponsiveWrapperReturn {
   Wrapper: React.ComponentType<WrapperProps>
@@ -50,10 +44,7 @@ export interface ResponsiveWrapperReturn {
     key: string,
     initialValue: T
   ) => [T, React.Dispatch<React.SetStateAction<T>>]
-  usePreservedForm: <T extends Record<string, unknown>>(
-    key: string,
-    options: PreservedFormOptions<T>
-  ) => PreservedFormReturn<T>
+  usePreservedStore: () => PreservedStore
 }
 
 export function createResponsiveWrapper({
@@ -91,7 +82,9 @@ export function createResponsiveWrapper({
     )
   }
 
-  const StateStoreContext = createContext<Map<string, unknown>>(new Map())
+  const StateStoreContext = createContext<PreservedStore>(new Map())
+
+  const usePreservedStore = () => useContext(StateStoreContext)
 
   function Wrapper(props: WrapperProps) {
     const isMobile = useIsMobile()
@@ -147,50 +140,10 @@ export function createResponsiveWrapper({
     return [state, setState]
   }
 
-  // Hook to create a react-hook-form form with preserved state. Form state is stored in the StateStoreContext and keyed by the provided key.
-  const usePreservedForm: <T extends Record<string, unknown>>(
-    key: string,
-    options: PreservedFormOptions<T>
-  ) => PreservedFormReturn<T> = <T extends FieldValues>(key: string, options: UseFormProps<T>) => {
-    const store = useContext(StateStoreContext)
-    const hasStoredValues = store.has(key)
-
-    const form = useForm<T>({
-      ...options,
-      // Use stored values as initial defaultValues so data is visible immediately (no flash)
-      defaultValues: (hasStoredValues ? store.get(key) : options.defaultValues) as DefaultValues<T>,
-    })
-
-    // When restoring from store, the stored values ARE the defaultValues,
-    // so isDirty is false. Fix this by re-establishing the original defaults
-    // as the baseline, then restoring the stored values with keepDefaultValues.
-    const didRestore = useRef(hasStoredValues)
-    useEffect(() => {
-      if (didRestore.current) {
-        didRestore.current = false
-        const currentValues = form.getValues()
-        // Set internal defaults back to the originals
-        form.reset(options.defaultValues as DefaultValues<T> as T)
-        // Restore stored values, keeping original defaults as the isDirty baseline
-        form.reset(currentValues as T, { keepDefaultValues: true })
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
-
-    useEffect(() => {
-      const subscription = form.watch((values) => {
-        store.set(key, values)
-      })
-      return () => subscription.unsubscribe()
-    }, [form, store, key])
-
-    return form
-  }
-
   return {
     Wrapper,
     Content,
     usePreservedState,
-    usePreservedForm,
+    usePreservedStore,
   }
 }
