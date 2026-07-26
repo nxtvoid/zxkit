@@ -1,6 +1,7 @@
-import { createPushModal, modal } from '@zxkit/surface'
+import { createPushModal, flow, modal } from '@zxkit/surface'
 import { Dialog } from '@zxkit/ui/dialog'
-import { DynamicWrapper } from './dynamic'
+import { DynamicContent, DynamicWrapper } from './dynamic'
+import { flowSteps } from './flow/steps'
 
 import { DefaultModalExample } from './example/default-example'
 import { DynamicModalExample } from './example/dynamic-example'
@@ -37,5 +38,14 @@ export const {
     AsyncExample: modal<boolean>()(AsyncModalExample),
     ReplaceStartExample: modal(ReplaceStartExample),
     ReplaceSuccessExample: modal(ReplaceSuccessExample),
+
+    // multi-step: the shell is rendered once, so stepping never replays the
+    // open animation the way replacing one modal with another does. No Wrapper,
+    // so it rides the defaultWrapper like the modals above.
+    CheckoutFlow: flow<boolean>()({
+      Content: DynamicContent,
+      initial: 'plan',
+      steps: flowSteps,
+    }),
   },
 })

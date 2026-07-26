@@ -8,6 +8,7 @@ import { CardDynamicExample } from './_components/card-dynamic'
 import { CardDefaultExample } from './_components/card-default'
 import { CardAsyncExample } from './_components/card-async'
 import { CardReplaceExample } from './_components/card-replace'
+import { CardFlowExample } from './_components/card-flow'
 import { CardPrimitivesExample } from './_components/card-primitives'
 import { features, registryExample, responsiveExample, usageExample } from './_components/content'
 
@@ -114,6 +115,7 @@ export default function SurfacePage() {
           <CardDynamicExample />
           <CardAsyncExample />
           <CardReplaceExample />
+          <CardFlowExample />
           <CardStateExample />
           <CardFormExample />
         </div>
