@@ -1,8 +1,9 @@
 import { createResponsiveWrapper } from '@zxkit/surface'
+import { createPreservedForm } from '@zxkit/surface/react-hook-form'
 import { Dialog, DialogContent } from '@zxkit/ui/dialog'
 import { Drawer, DrawerContent } from '@zxkit/ui/drawer'
 
-const { Wrapper, Content, usePreservedForm, usePreservedState } = createResponsiveWrapper({
+const { Wrapper, Content, usePreservedState, usePreservedStore } = createResponsiveWrapper({
   desktop: {
     Wrapper: Dialog,
     Content: DialogContent,
@@ -13,5 +14,7 @@ const { Wrapper, Content, usePreservedForm, usePreservedState } = createResponsi
   },
   breakpoint: 640,
 })
+
+const usePreservedForm = createPreservedForm(usePreservedStore)
 
 export { Wrapper as DynamicWrapper, Content as DynamicContent, usePreservedForm, usePreservedState }

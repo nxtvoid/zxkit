@@ -2,90 +2,44 @@
 
 import React, { Suspense, useEffect, useState } from 'react'
 import mitt, { Handler } from 'mitt'
-import { Dialog } from 'radix-ui'
 
-type ModalName = string | number | symbol
-type ModalWrapperProps = {
-  open?: boolean
-  onOpenChange?: (open: boolean) => void
-  children?: React.ReactNode
-  defaultOpen?: boolean
-}
+import { listNames } from '../utils/names'
+import { ModalControlsContext } from './controls'
+import { FlowHost } from './flow'
+import { ModalRoot } from './modal-root'
+import type {
+  ExtractModalProps,
+  ExtractModalResult,
+  ModalHandle,
+  ModalInvocation,
+  ModalName,
+  ModalRegistry,
+  ModalWrapperProps,
+} from './types'
 
-export type ModalDefinition<Props, Result = unknown> =
-  | (React.ComponentType<Props> & { __modalResult?: Result })
-  | ({
-      Wrapper: React.ComponentType<ModalWrapperProps>
-      Component: React.ComponentType<Props>
-    } & { __modalResult?: Result })
-
-type ExtractModalProps<T> =
-  T extends React.ComponentType<infer P>
-    ? P
-    : T extends { Component: React.ComponentType<infer P> }
-      ? P
-      : never
-
-type ExtractModalResult<T> = T extends { __modalResult?: infer R } ? R : unknown
-type Prettify<T> = {
-  [K in keyof T]: T[K]
-} & Record<never, never>
-type ModalArgs<T> = keyof Prettify<ExtractModalProps<T>> extends never
-  ? []
-  : [props: Prettify<ExtractModalProps<T>>]
-// `React.ComponentType` is invariant in its props, so the modal registry constraint
-// needs a permissive placeholder type to preserve inference for each concrete modal entry.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ModalRegistry = Record<string, ModalDefinition<any, any>>
-type ModalInvocation<TModals extends ModalRegistry, TName extends keyof TModals> = [
-  name: TName,
-  ...args: ModalArgs<TModals[TName]>,
-]
-
-export type ModalHandle<TModals extends ModalRegistry> = {
-  key: string
-  close: () => void
-  replace: <TName extends keyof TModals>(
-    ...invocation: ModalInvocation<TModals, TName>
-  ) => ModalHandle<TModals>
-}
-
-export function modal<Props, Result = unknown>(
-  definition: ModalDefinition<Props, Result>
-): ModalDefinition<Props, Result> {
-  return definition
-}
-
-interface ModalControlsContextValue<TResult = unknown> {
-  key: string
-  name: ModalName
-  close: () => void
-  resolve: (value?: TResult) => void
-  reject: (reason?: unknown) => void
-  replace: <TName extends ModalName>(name: TName, props?: Record<string, unknown>) => void
-}
-
-const ModalControlsContext = React.createContext<ModalControlsContextValue | null>(null)
-
-export function useModalControls<TResult = unknown>() {
-  const context = React.useContext(ModalControlsContext)
-
-  if (!context) {
-    throw new Error('useModalControls must be used within a modal created by createPushModal')
-  }
-
-  return context as ModalControlsContextValue<TResult>
-}
+const EXIT_ANIMATION_MS = 350
+const GARBAGE_GRACE_MS = 300
 
 interface CreatePushModalOptions<TModals extends ModalRegistry> {
+  /**
+   * Every modal this stack can push, keyed by the name you pass to `pushModal()`.
+   * Build entries with `modal()` for a single screen, `flow()` for a multi-step one.
+   */
   modals: TModals
+  /**
+   * Wrapper used for modals that do not declare their own `Wrapper`.
+   * Pass the root of whatever dialog primitive the app uses.
+   */
+  defaultWrapper?: React.ComponentType<ModalWrapperProps>
 }
 
 export function createPushModal<TModals extends ModalRegistry>({
   modals,
+  defaultWrapper,
 }: CreatePushModalOptions<TModals>) {
   type Modals = TModals
   type ModalKeys = keyof Modals
+
   interface AsyncResolution {
     resolve: (value: unknown) => void
     reject: (reason?: unknown) => void
@@ -93,16 +47,8 @@ export function createPushModal<TModals extends ModalRegistry>({
 
   type EventHandlers = {
     change: { name: ModalKeys; open: boolean; props: Record<string, unknown> }
-    push: {
-      key?: string
-      name: ModalKeys
-      props: Record<string, unknown>
-    }
-    replace: {
-      key?: string
-      name: ModalKeys
-      props: Record<string, unknown>
-    }
+    push: { key?: string; name: ModalKeys; props: Record<string, unknown> }
+    replace: { key?: string; name: ModalKeys; props: Record<string, unknown> }
     pop: { key?: string; name?: ModalKeys }
     popAll: undefined
   }
@@ -113,13 +59,15 @@ export function createPushModal<TModals extends ModalRegistry>({
     props: Record<string, unknown>
     open: boolean
     closedAt?: number
+    /** Bumped on replace, so the body remounts while the wrapper stays open. */
+    instance: number
   }
 
   const filterGarbage = (item: StateItem): boolean => {
     if (item.open || !item.closedAt) {
       return true
     }
-    return Date.now() - item.closedAt < 300
+    return Date.now() - item.closedAt < GARBAGE_GRACE_MS
   }
 
   const emitter = mitt<EventHandlers>()
@@ -137,6 +85,7 @@ export function createPushModal<TModals extends ModalRegistry>({
     name,
     props,
     open: true,
+    instance: 0,
   })
 
   const resolveAsyncModal = (key: string, value: unknown) => {
@@ -155,10 +104,7 @@ export function createPushModal<TModals extends ModalRegistry>({
     resolution.reject(reason)
   }
 
-  const popModalByKey = (key: string) =>
-    emitter.emit('pop', {
-      key,
-    })
+  const popModalByKey = (key: string) => emitter.emit('pop', { key })
 
   const closeModalByKey = (key: string) => {
     resolveAsyncModal(key, undefined)
@@ -175,24 +121,95 @@ export function createPushModal<TModals extends ModalRegistry>({
     popModalByKey(key)
   }
 
-  const replaceModalByKey = (key: string, name: ModalKeys, props: Record<string, unknown>) =>
-    emitter.emit('replace', {
-      key,
-      name,
-      props,
-    })
+  const assertRegistered = (name: ModalKeys) => {
+    if (name in modals) return
+
+    const known = Object.keys(modals)
+
+    throw new Error(
+      `Modal "${String(name)}" is not registered with createPushModal. ` +
+        (known.length > 0
+          ? `Known modals, closest first: ${listNames(String(name), known)}.`
+          : 'The modals object passed to createPushModal is empty.')
+    )
+  }
+
+  const replaceModalByKey = (key: string, name: ModalKeys, props: Record<string, unknown>) => {
+    assertRegistered(name)
+
+    return emitter.emit('replace', { key, name, props })
+  }
+
+  const ModalInstance = React.memo(function ModalInstance({ item }: { item: StateItem }) {
+    const controls = React.useMemo(
+      () => ({
+        key: item.key,
+        name: item.name,
+        close: () => closeModalByKey(item.key),
+        resolve: (value: unknown) => resolveModalByKey(item.key, value),
+        reject: (reason?: unknown) => rejectModalByKey(item.key, reason),
+        replace: (name: ModalName, props: Record<string, unknown> = {}) =>
+          replaceModalByKey(item.key, name as ModalKeys, props),
+      }),
+      [item.key, item.name]
+    )
+
+    const onOpenChange = React.useCallback(
+      (isOpen: boolean) => {
+        if (!isOpen) {
+          closeModalByKey(item.key)
+        }
+      },
+      [item.key]
+    )
+
+    const entry = modals[item.name]
+    if (!entry) {
+      assertRegistered(item.name)
+      return null
+    }
+
+    const isFlow = '__flow' in entry
+    const Root = ('Wrapper' in entry ? entry.Wrapper : undefined) ?? defaultWrapper
+
+    if (!Root) {
+      throw new Error(
+        `Modal "${String(item.name)}" declares no Wrapper, and createPushModal was called ` +
+          `without a defaultWrapper. Pass the root of your dialog primitive, e.g. ` +
+          `createPushModal({ modals, defaultWrapper: Dialog.Root }).`
+      )
+    }
+
+    const body = isFlow ? (
+      <FlowHost key={item.instance} definition={entry} initialProps={item.props} />
+    ) : (
+      <Suspense>
+        {React.createElement(
+          ('Component' in entry ? entry.Component : entry) as React.ComponentType<
+            Record<string, unknown>
+          >,
+          item.props
+        )}
+      </Suspense>
+    )
+
+    return (
+      <ModalRoot Root={Root} open={item.open} onOpenChange={onOpenChange}>
+        <ModalControlsContext.Provider value={controls}>{body}</ModalControlsContext.Provider>
+      </ModalRoot>
+    )
+  })
 
   function ModalProvider() {
     const [state, setState] = useState<StateItem[]>([])
 
-    // Remove closed modals from state after their exit animation completes
     useEffect(() => {
       const hasClosedModals = state.some((item) => typeof item.closedAt === 'number')
       if (!hasClosedModals) return
 
       const timer = setTimeout(() => {
         setState((p) => p.filter(filterGarbage))
-      }, 350)
+      }, EXIT_ANIMATION_MS)
 
       return () => {
         clearTimeout(timer)
@@ -204,6 +221,7 @@ export function createPushModal<TModals extends ModalRegistry>({
         emitter.emit('change', { name, open: true, props })
         setState((p) => [...p, createStateItem(name, props, key)].filter(filterGarbage))
       }
+
       const replaceHandler: Handler<EventHandlers['replace']> = ({ key, name, props }) => {
         setState((p) => {
           const last =
@@ -228,6 +246,7 @@ export function createPushModal<TModals extends ModalRegistry>({
                   props,
                   open: true,
                   closedAt: undefined,
+                  instance: item.instance + 1,
                 }
               : item
           )
@@ -240,18 +259,15 @@ export function createPushModal<TModals extends ModalRegistry>({
             key !== undefined
               ? items.findIndex((item) => item.key === key)
               : name === undefined
-                ? // Pick last open item if no name is provided
-                  items.findLastIndex((item) => item.open)
+                ? items.findLastIndex((item) => item.open)
                 : items.findLastIndex((item) => item.name === name && item.open)
+
           const match = items[index]
           if (match) {
             resolveAsyncModal(match.key, undefined)
-            emitter.emit('change', {
-              name: match.name,
-              open: false,
-              props: match.props,
-            })
+            emitter.emit('change', { name: match.name, open: false, props: match.props })
           }
+
           return items.map((item) =>
             match?.key !== item.key ? item : { ...item, open: false, closedAt: Date.now() }
           )
@@ -266,15 +282,18 @@ export function createPushModal<TModals extends ModalRegistry>({
               emitter.emit('change', { name: item.name, open: false, props: item.props })
             }
           })
+
           return items.map((item) =>
             item.open ? { ...item, open: false, closedAt: Date.now() } : item
           )
         })
       }
+
       emitter.on('push', pushHandler)
       emitter.on('replace', replaceHandler)
       emitter.on('pop', popHandler)
       emitter.on('popAll', popAllHandler)
+
       return () => {
         emitter.off('push', pushHandler)
         emitter.off('replace', replaceHandler)
@@ -285,41 +304,9 @@ export function createPushModal<TModals extends ModalRegistry>({
 
     return (
       <>
-        {state.map((item) => {
-          const modal = modals[item.name]!
-          const Component = ('Component' in modal ? modal.Component : modal) as React.ComponentType<
-            Record<string, unknown>
-          >
-          const Root = 'Wrapper' in modal ? modal.Wrapper : Dialog.Root
-
-          return (
-            <Root
-              key={item.key}
-              open={item.open}
-              onOpenChange={(isOpen) => {
-                if (!isOpen) {
-                  closeModalByKey(item.key)
-                }
-              }}
-            >
-              <ModalControlsContext.Provider
-                value={{
-                  key: item.key,
-                  name: item.name,
-                  close: () => closeModalByKey(item.key),
-                  resolve: (value) => resolveModalByKey(item.key, value),
-                  reject: (reason) => rejectModalByKey(item.key, reason),
-                  replace: (name, props = {}) =>
-                    replaceModalByKey(item.key, name as ModalKeys, props),
-                }}
-              >
-                <Suspense>
-                  <Component {...item.props} />
-                </Suspense>
-              </ModalControlsContext.Provider>
-            </Root>
-          )
-        })}
+        {state.map((item) => (
+          <ModalInstance key={item.key} item={item} />
+        ))}
       </>
     )
   }
@@ -337,53 +324,40 @@ export function createPushModal<TModals extends ModalRegistry>({
     },
   })
 
-  const pushModal = <T extends StateItem['name']>(...invocation: ModalInvocationFor<T>) => {
+  const pushModal = <T extends ModalKeys>(...invocation: ModalInvocationFor<T>) => {
     const [name, ...args] = invocation
     const [props] = args
     const key = createModalKey()
 
-    emitter.emit('push', {
-      key,
-      name,
-      props: props ?? {},
-    })
+    assertRegistered(name)
+    emitter.emit('push', { key, name, props: props ?? {} })
 
     return createModalHandle(key)
   }
 
-  const popModal = (name?: StateItem['name']) =>
-    emitter.emit('pop', {
-      name,
-    })
+  const popModal = (name?: ModalKeys) => emitter.emit('pop', { name })
 
-  const replaceWithModal = <T extends StateItem['name']>(...invocation: ModalInvocationFor<T>) => {
+  const replaceWithModal = <T extends ModalKeys>(...invocation: ModalInvocationFor<T>) => {
     const [name, ...args] = invocation
     const [props] = args
-    emitter.emit('replace', {
-      name,
-      props: props ?? {},
-    })
+
+    assertRegistered(name)
+    emitter.emit('replace', { name, props: props ?? {} })
   }
 
-  function pushModalAsync<T extends StateItem['name']>(
+  function pushModalAsync<T extends ModalKeys>(
     ...invocation: ModalInvocationFor<T>
   ): Promise<ExtractModalResult<Modals[T]> | undefined>
-  function pushModalAsync<T extends StateItem['name']>(...invocation: ModalInvocationFor<T>) {
+  function pushModalAsync<T extends ModalKeys>(...invocation: ModalInvocationFor<T>) {
     const [name, ...args] = invocation
     const [props] = args
     const key = createModalKey()
 
-    return new Promise<unknown | undefined>((resolve, reject) => {
-      asyncResolutions.set(key, {
-        resolve,
-        reject,
-      })
+    assertRegistered(name)
 
-      emitter.emit('push', {
-        key,
-        name,
-        props: props ?? {},
-      })
+    return new Promise<unknown | undefined>((resolve, reject) => {
+      asyncResolutions.set(key, { resolve, reject })
+      emitter.emit('push', { key, name, props: props ?? {} })
     })
   }
 
@@ -399,16 +373,15 @@ export function createPushModal<TModals extends ModalRegistry>({
 
   const onPushModal = <T extends ModalKeys>(name: T | '*', callback: EventCallback<T>) => {
     const fn: Handler<EventHandlers['change']> = (payload) => {
-      if (payload.name === name) {
-        callback(payload.open, payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
-      } else if (name === '*') {
-        callback(
-          payload.open,
-          payload.props as unknown as ExtractModalProps<Modals[T]>,
-          payload.name as T
-        )
-      }
+      if (payload.name !== name && name !== '*') return
+
+      callback(
+        payload.open,
+        payload.props as unknown as ExtractModalProps<Modals[T]>,
+        payload.name as T
+      )
     }
+
     emitter.on('change', fn)
     return () => emitter.off('change', fn)
   }
@@ -421,24 +394,15 @@ export function createPushModal<TModals extends ModalRegistry>({
     const delay = options?.delay ?? 0
 
     const fn: Handler<EventHandlers['change']> = (payload) => {
-      if (!payload.open) {
-        if (payload.name === name) {
-          if (delay > 0) {
-            setTimeout(() => {
-              callback(payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
-            }, delay)
-          } else {
-            callback(payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
-          }
-        } else if (name === '*') {
-          if (delay > 0) {
-            setTimeout(() => {
-              callback(payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
-            }, delay)
-          } else {
-            callback(payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
-          }
-        }
+      if (payload.open) return
+      if (payload.name !== name && name !== '*') return
+
+      const run = () => callback(payload.props as ExtractModalProps<Modals[T]>, payload.name as T)
+
+      if (delay > 0) {
+        setTimeout(run, delay)
+      } else {
+        run()
       }
     }
 
@@ -456,18 +420,27 @@ export function createPushModal<TModals extends ModalRegistry>({
     onPushModal,
     onCloseModal,
     useOnPushModal: <T extends ModalKeys>(name: T | '*', callback: EventCallback<T>) => {
+      // Held in a ref so an inline callback does not resubscribe on every render.
+      const latest = React.useRef(callback)
+      latest.current = callback
+
       useEffect(() => {
-        return onPushModal(name, callback)
-      }, [name, callback])
+        return onPushModal<T>(name, (...args) => latest.current(...args))
+      }, [name])
     },
     useOnCloseModal: <T extends ModalKeys>(
       name: T | '*',
       callback: CloseCallback<T>,
       options?: { delay?: number }
     ) => {
+      const latest = React.useRef(callback)
+      latest.current = callback
+
+      const delay = options?.delay
+
       useEffect(() => {
-        return onCloseModal(name, callback, options)
-      }, [name, callback, options])
+        return onCloseModal<T>(name, (...args) => latest.current(...args), { delay })
+      }, [name, delay])
     },
   }
 }
