@@ -54,9 +54,40 @@ export type ModalHandle<TModals extends ModalRegistry> = {
   ) => ModalHandle<TModals>
 }
 
-export function modal<Props, Result = unknown>(
-  definition: ModalDefinition<Props, Result>
-): ModalDefinition<Props, Result> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyComponent = React.ComponentType<any>
+
+type ModalInput =
+  | AnyComponent
+  | { Wrapper: React.ComponentType<ModalWrapperProps>; Component: AnyComponent }
+
+// Inferring `Props` straight from `ModalDefinition` fails because `React.ComponentType`
+// is a union, and TypeScript infers poorly against union targets. Capturing the whole
+// input first and reading the props off the concrete component afterwards is reliable.
+type PropsOf<D> = D extends { Component: infer C extends AnyComponent }
+  ? React.ComponentProps<C>
+  : D extends AnyComponent
+    ? React.ComponentProps<D>
+    : never
+
+/**
+ * Registers a modal and infers its props from the component.
+ *
+ * ```ts
+ * modal(EditOrder)                              // props inferred
+ * modal({ Wrapper: DynamicWrapper, Component: EditOrder })
+ * modal<boolean>()(ConfirmDelete)               // async result typed too
+ * ```
+ */
+export function modal<Result>(): <D extends ModalInput>(
+  definition: D
+) => ModalDefinition<PropsOf<D>, Result>
+export function modal<D extends ModalInput>(definition: D): ModalDefinition<PropsOf<D>, unknown>
+export function modal(definition?: ModalInput) {
+  if (definition === undefined) {
+    return (deferred: ModalInput) => deferred
+  }
+
   return definition
 }
 

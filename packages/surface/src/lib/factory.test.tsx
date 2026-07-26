@@ -2,7 +2,7 @@
 
 import React, { act } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createPushModal, modal, useModalControls } from './factory'
 
@@ -28,7 +28,7 @@ function createTestModalSystem() {
           ) : null,
         Component: ({ label }) => <div>{label}</div>,
       }),
-      confirm: modal<{ label: string }, boolean>({
+      confirm: modal<boolean>()({
         Wrapper: ({ open, onOpenChange, children }) =>
           open ? (
             <div data-testid='modal-root'>
@@ -54,7 +54,7 @@ function createTestModalSystem() {
           )
         },
       }),
-      stepOne: modal<{ label: string }>({
+      stepOne: modal({
         Wrapper: ({ open, onOpenChange, children }) =>
           open ? (
             <div data-testid='modal-root'>
@@ -77,7 +77,7 @@ function createTestModalSystem() {
           )
         },
       }),
-      stepTwo: modal<{ label: string }>({
+      stepTwo: modal({
         Wrapper: ({ open, onOpenChange, children }) =>
           open ? (
             <div data-testid='modal-root'>
@@ -223,5 +223,83 @@ describe('createPushModal', () => {
 
     expect(screen.queryByText('first step')).toBeNull()
     expect(screen.queryByText('second step')).not.toBeNull()
+  })
+})
+
+describe('createPushModal defaultWrapper', () => {
+  const bareModals = {
+    bare: modal(({ label }: { label: string }) => <div>{label}</div>),
+  }
+
+  it('hosts modals that declare no Wrapper of their own', () => {
+    const { ModalProvider, pushModal } = createPushModal({
+      modals: bareModals,
+      defaultWrapper: ({ open, onOpenChange, children }) =>
+        open ? (
+          <div data-testid='default-root'>
+            <button type='button' onClick={() => onOpenChange?.(false)}>
+              close
+            </button>
+            {children}
+          </div>
+        ) : null,
+    })
+
+    render(<ModalProvider />)
+
+    act(() => {
+      pushModal('bare', { label: 'from default wrapper' })
+    })
+
+    const root = screen.getByTestId('default-root')
+    expect(within(root).queryByText('from default wrapper')).not.toBeNull()
+
+    fireEvent.click(within(root).getByRole('button', { name: 'close' }))
+
+    expect(screen.queryByText('from default wrapper')).toBeNull()
+  })
+
+  it('lets a per-modal Wrapper take precedence over the defaultWrapper', () => {
+    const { ModalProvider, pushModal } = createPushModal({
+      modals: {
+        own: modal({
+          Wrapper: ({ open, children }) =>
+            open ? <div data-testid='own-root'>{children}</div> : null,
+          Component: ({ label }) => <div>{label}</div>,
+        }),
+      },
+      defaultWrapper: ({ open, children }) =>
+        open ? <div data-testid='default-root'>{children}</div> : null,
+    })
+
+    render(<ModalProvider />)
+
+    act(() => {
+      pushModal('own', { label: 'own wrapper' })
+    })
+
+    expect(screen.queryByTestId('own-root')).not.toBeNull()
+    expect(screen.queryByTestId('default-root')).toBeNull()
+  })
+
+  // The package ships no primitive of its own, so this is the only failure mode
+  // left when a consumer forgets to supply one.
+  it('throws a directive error when neither a Wrapper nor a defaultWrapper exists', () => {
+    const { ModalProvider, pushModal } = createPushModal({ modals: bareModals })
+
+    // React logs the render error to console.error before it propagates.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      render(<ModalProvider />)
+
+      expect(() =>
+        act(() => {
+          pushModal('bare', { label: 'no wrapper' })
+        })
+      ).toThrow(/declares no Wrapper.*without a defaultWrapper/s)
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 })

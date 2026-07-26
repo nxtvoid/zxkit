@@ -1,4 +1,3 @@
-import type React from 'react'
 import { createPushModal, modal } from '@zxkit/surface'
 import { Dialog } from '@zxkit/ui/dialog'
 import { DynamicWrapper } from './dynamic'
@@ -22,39 +21,21 @@ export const {
   onPushModal,
   ModalProvider,
 } = createPushModal({
-  // Sheet shares this root under the hood.
-  defaultWrapper: Dialog,
+  // Most modals here are responsive, so DynamicWrapper is the default and the two
+  // that render a plain Dialog or Sheet opt out with their own Wrapper. Props are
+  // inferred from each Component — no generics needed.
+  defaultWrapper: DynamicWrapper,
   modals: {
-    // just dialog
-    DefaultExample: modal<Record<never, never>>(DefaultModalExample),
-
-    // sheet (this doesn't work with dynamic modals)
-    DefaultSheetExample: modal<Record<never, never>>(DefaultSheetExample),
+    // plain dialog / sheet — Sheet shares the Dialog root under the hood
+    DefaultExample: modal({ Wrapper: Dialog, Component: DefaultModalExample }),
+    DefaultSheetExample: modal({ Wrapper: Dialog, Component: DefaultSheetExample }),
 
     // dynamic dialog/drawer based on breakpoint
-    DynamicExample: modal<Record<never, never>>({
-      Wrapper: DynamicWrapper,
-      Component: DynamicModalExample,
-    }),
-    StateExample: modal<Record<never, never>>({
-      Wrapper: DynamicWrapper,
-      Component: StateModalExample,
-    }),
-    FormExample: modal<Record<never, never>>({
-      Wrapper: DynamicWrapper,
-      Component: FormModalExample,
-    }),
-    AsyncExample: modal<React.ComponentProps<typeof AsyncModalExample>, boolean>({
-      Wrapper: DynamicWrapper,
-      Component: AsyncModalExample,
-    }),
-    ReplaceStartExample: modal<Record<never, never>>({
-      Wrapper: DynamicWrapper,
-      Component: ReplaceStartExample,
-    }),
-    ReplaceSuccessExample: modal<React.ComponentProps<typeof ReplaceSuccessExample>>({
-      Wrapper: DynamicWrapper,
-      Component: ReplaceSuccessExample,
-    }),
+    DynamicExample: modal(DynamicModalExample),
+    StateExample: modal(StateModalExample),
+    FormExample: modal(FormModalExample),
+    AsyncExample: modal<boolean>()(AsyncModalExample),
+    ReplaceStartExample: modal(ReplaceStartExample),
+    ReplaceSuccessExample: modal(ReplaceSuccessExample),
   },
 })
