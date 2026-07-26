@@ -8,6 +8,7 @@ import { CardDynamicExample } from './_components/card-dynamic'
 import { CardDefaultExample } from './_components/card-default'
 import { CardAsyncExample } from './_components/card-async'
 import { CardReplaceExample } from './_components/card-replace'
+import { CardPrimitivesExample } from './_components/card-primitives'
 import { features, registryExample, responsiveExample, usageExample } from './_components/content'
 
 export const metadata: Metadata = {
@@ -46,9 +47,11 @@ export default function SurfacePage() {
           Responsive dialogs and drawers with a modal stack.
         </h1>
         <p className='text-muted-foreground mt-4 text-base leading-7'>
-          Built for shadcn Dialog and Drawer. Define your modals once, push them by name from
-          anywhere, and let the breakpoint decide how they render — without losing state in the
-          swap.
+          Bring your own primitives — Base UI, Radix, or anything with an{' '}
+          <code className='font-mono text-sm'>open</code>/
+          <code className='font-mono text-sm'>onOpenChange</code> root. Define your modals once,
+          push them by name from anywhere, and let the breakpoint decide how they render — without
+          losing state in the swap.
         </p>
 
         <div className='mt-8 flex flex-wrap items-center gap-x-6 gap-y-3'>
@@ -105,6 +108,7 @@ export default function SurfacePage() {
         </p>
 
         <div className='mt-6 flex flex-col gap-6'>
+          <CardPrimitivesExample />
           <CardDefaultExample />
           <CardSheetExample />
           <CardDynamicExample />
