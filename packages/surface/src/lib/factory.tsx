@@ -10,10 +10,39 @@ type ModalName = string | number | symbol
  * headless primitive (or a hand-written shim over one) can satisfy it.
  */
 export type ModalWrapperProps = {
+  /** Driven by the stack. The wrapper should render nothing when false. */
   open?: boolean
+  /** Called by the primitive on dismiss. The stack closes the instance on `false`. */
   onOpenChange?: (open: boolean) => void
   children?: React.ReactNode
+  /** Only forwarded to the primitive; the stack always controls `open`. */
   defaultOpen?: boolean
+}
+
+/**
+ * Shape the shell of a flow must accept. It is rendered once and stays mounted
+ * while steps change, so it should be the primitive's content component.
+ */
+export type FlowContentProps = {
+  children?: React.ReactNode
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type StepRegistry = Record<string, React.ComponentType<any>>
+
+/**
+ * A multi-step modal. Unlike replacing one modal with another, the Wrapper and
+ * Content are rendered once and never unmount, so swapping steps does not replay
+ * the primitive's open animation.
+ */
+export type FlowDefinition<Steps extends StepRegistry, Props, Result = unknown> = {
+  __flow: true
+  Wrapper: React.ComponentType<ModalWrapperProps>
+  Content: React.ComponentType<FlowContentProps>
+  steps: Steps
+  initial: keyof Steps & string
+  __modalProps?: Props
+  __modalResult?: Result
 }
 
 export type ModalDefinition<Props, Result = unknown> =
@@ -23,8 +52,11 @@ export type ModalDefinition<Props, Result = unknown> =
       Component: React.ComponentType<Props>
     } & { __modalResult?: Result })
 
-type ExtractModalProps<T> =
-  T extends React.ComponentType<infer P>
+// The flow branch comes first: a flow is an object and would otherwise fall through
+// to the `{ Component }` branch and resolve to `never`.
+type ExtractModalProps<T> = T extends { __flow: true; __modalProps?: infer P }
+  ? P
+  : T extends React.ComponentType<infer P>
     ? P
     : T extends { Component: React.ComponentType<infer P> }
       ? P
@@ -34,26 +66,30 @@ type ExtractModalResult<T> = T extends { __modalResult?: infer R } ? R : unknown
 type Prettify<T> = {
   [K in keyof T]: T[K]
 } & Record<never, never>
-type ModalProps<T> = Prettify<ExtractModalProps<T>>
-// Three cases, in order: the modal takes no props at all; it takes only optional
-// ones, so the argument itself is optional; it has at least one required prop.
-type ModalArgs<T> = keyof ModalProps<T> extends never
+// Three cases, in order: no props at all; only optional ones, so the argument
+// itself is optional; at least one required prop.
+type ArgsFor<P> = keyof Prettify<P> extends never
   ? []
-  : Record<never, never> extends ModalProps<T>
-    ? [props?: ModalProps<T>]
-    : [props: ModalProps<T>]
+  : Record<never, never> extends Prettify<P>
+    ? [props?: Prettify<P>]
+    : [props: Prettify<P>]
+type ModalArgs<T> = ArgsFor<ExtractModalProps<T>>
 // `React.ComponentType` is invariant in its props, so the modal registry constraint
 // needs a permissive placeholder type to preserve inference for each concrete modal entry.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ModalRegistry = Record<string, ModalDefinition<any, any>>
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type ModalRegistry = Record<string, ModalDefinition<any, any> | FlowDefinition<any, any, any>>
+/* eslint-enable @typescript-eslint/no-explicit-any */
 type ModalInvocation<TModals extends ModalRegistry, TName extends keyof TModals> = [
   name: TName,
   ...args: ModalArgs<TModals[TName]>,
 ]
 
 export type ModalHandle<TModals extends ModalRegistry> = {
+  /** Identifies this instance, so two modals pushed under the same name stay distinct. */
   key: string
+  /** Closes this instance. Resolves a pending `pushModalAsync` with `undefined`. */
   close: () => void
+  /** Swaps this instance for another modal. Mounts a fresh panel — see `flow()` for steps. */
   replace: <TName extends keyof TModals>(
     ...invocation: ModalInvocation<TModals, TName>
   ) => ModalHandle<TModals>
@@ -96,6 +132,166 @@ export function modal(definition?: ModalInput) {
   return definition
 }
 
+// `Steps` and `Initial` are inferred as separate type parameters rather than read
+// back off a single input type. A property constrained to `string` widens the
+// literal away, which would lose the initial step's props.
+type FlowInput<Steps extends StepRegistry, Initial extends keyof Steps & string> = {
+  /**
+   * Root of the dialog primitive, e.g. `Dialog.Root` or a responsive wrapper.
+   * Rendered once for the whole flow.
+   */
+  Wrapper: React.ComponentType<ModalWrapperProps>
+  /**
+   * The panel every step renders inside, e.g. `DialogContent`. Mounted once and
+   * kept across step changes — this is what stops the open animation from
+   * replaying. Steps must not render a Content of their own.
+   */
+  Content: React.ComponentType<FlowContentProps>
+  /**
+   * The screens of this flow, keyed by the name you pass to `go()`. Each one
+   * renders only the body; props are inferred from the component.
+   */
+  steps: Steps
+  /**
+   * Which step the flow opens on, and the step `reset()` returns to.
+   *
+   * It also decides the flow's own props: pushing it takes the props of this
+   * step, so `initial: 'plan'` makes `pushModal('Checkout', { plan })` required.
+   * Explicit because key order is not part of an object type in TypeScript, so
+   * a "first step" could not be typed.
+   */
+  initial: Initial
+}
+
+// Pushing the flow passes props to whichever step it starts on.
+type InitialProps<Steps extends StepRegistry, Initial extends keyof Steps> = React.ComponentProps<
+  Steps[Initial]
+>
+
+/**
+ * Registers a multi-step modal. The Wrapper and Content are rendered once and stay
+ * mounted across steps, so moving between steps never replays the open animation
+ * the way replacing one modal with another does.
+ *
+ * ```ts
+ * const Checkout = flow({
+ *   Wrapper: DynamicWrapper,
+ *   Content: DynamicContent,
+ *   initial: 'cart',
+ *   steps: { cart: CartStep, payment: PaymentStep },
+ * })
+ *
+ * flow<boolean>()({ ... })  // async result typed too
+ * ```
+ */
+export function flow<Result>(): <Steps extends StepRegistry, Initial extends keyof Steps & string>(
+  definition: FlowInput<Steps, Initial>
+) => FlowDefinition<Steps, InitialProps<Steps, Initial>, Result>
+export function flow<Steps extends StepRegistry, Initial extends keyof Steps & string>(
+  definition: FlowInput<Steps, Initial>
+): FlowDefinition<Steps, InitialProps<Steps, Initial>, unknown>
+export function flow(definition?: FlowInput<StepRegistry, string>) {
+  const brand = (input: FlowInput<StepRegistry, string>) => ({ ...input, __flow: true as const })
+
+  if (definition === undefined) {
+    return (deferred: FlowInput<StepRegistry, string>) => brand(deferred)
+  }
+
+  return brand(definition)
+}
+
+type StepArgs<C> = ArgsFor<C extends AnyComponent ? React.ComponentProps<C> : never>
+
+export interface FlowControls<Steps extends StepRegistry = StepRegistry> {
+  /** Name of the step currently rendered. */
+  step: keyof Steps & string
+  /** True when at least one step is below this one on the flow's stack. */
+  canGoBack: boolean
+  /** Moves forward, keeping the current step on the stack so `back()` can return to it. */
+  go: <TName extends keyof Steps & string>(
+    ...invocation: [name: TName, ...StepArgs<Steps[TName]>]
+  ) => void
+  /** Moves without leaving a step behind, so `back()` skips the one being replaced. */
+  replace: <TName extends keyof Steps & string>(
+    ...invocation: [name: TName, ...StepArgs<Steps[TName]>]
+  ) => void
+  /** Returns to the previous step. No-op on the first step. */
+  back: () => void
+  /** Returns to the step the flow started on, clearing the stack. */
+  reset: () => void
+}
+
+const FlowControlsContext = React.createContext<FlowControls | null>(null)
+
+/**
+ * Use inside a flow step. Pass the steps object as a type argument to get the step
+ * names and their props checked: `useFlowControls<typeof checkoutSteps>()`.
+ */
+export function useFlowControls<Steps extends StepRegistry = StepRegistry>() {
+  const context = React.useContext(FlowControlsContext)
+
+  if (!context) {
+    throw new Error('useFlowControls must be used within a step of a modal created by flow()')
+  }
+
+  return context as FlowControls<Steps>
+}
+
+type FlowStackEntry = { name: string; props: Record<string, unknown> }
+
+/**
+ * Renders the shell once and swaps only the step below it. `Content` keeps the same
+ * component type across steps, so React reconciles it in place instead of tearing
+ * the panel down and mounting a fresh one.
+ */
+function FlowHost({
+  definition,
+  initialProps,
+}: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  definition: FlowDefinition<any, any, any>
+  initialProps: Record<string, unknown>
+}) {
+  const firstStep = React.useMemo<FlowStackEntry[]>(
+    () => [{ name: definition.initial, props: initialProps }],
+    [definition.initial, initialProps]
+  )
+  const [stack, setStack] = useState<FlowStackEntry[]>(firstStep)
+
+  const current = stack[stack.length - 1] ?? firstStep[0]!
+  const StepComponent = definition.steps[current.name]
+
+  const controls = React.useMemo<FlowControls>(
+    () => ({
+      step: current.name,
+      canGoBack: stack.length > 1,
+      go: (name, props) => setStack((s) => [...s, { name, props: props ?? {} }]),
+      replace: (name, props) => setStack((s) => [...s.slice(0, -1), { name, props: props ?? {} }]),
+      back: () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)),
+      reset: () => setStack(firstStep),
+    }),
+    [current.name, stack.length, firstStep]
+  )
+
+  if (!StepComponent) {
+    throw new Error(
+      `Flow step "${current.name}" is not registered. Known steps: ${Object.keys(definition.steps).join(', ')}.`
+    )
+  }
+
+  const Content = definition.Content
+
+  return (
+    <FlowControlsContext.Provider value={controls}>
+      <Content>
+        <Suspense>
+          <StepComponent {...current.props} />
+        </Suspense>
+      </Content>
+    </FlowControlsContext.Provider>
+  )
+}
+
 interface ModalControlsContextValue<TResult = unknown> {
   key: string
   name: ModalName
@@ -118,6 +314,10 @@ export function useModalControls<TResult = unknown>() {
 }
 
 interface CreatePushModalOptions<TModals extends ModalRegistry> {
+  /**
+   * Every modal this stack can push, keyed by the name you pass to `pushModal()`.
+   * Build entries with `modal()` for a single screen, `flow()` for a multi-step one.
+   */
   modals: TModals
   /**
    * Wrapper used for modals that do not declare their own `Wrapper`.
@@ -332,11 +532,9 @@ export function createPushModal<TModals extends ModalRegistry>({
     return (
       <>
         {state.map((item) => {
-          const modal = modals[item.name]!
-          const Component = ('Component' in modal ? modal.Component : modal) as React.ComponentType<
-            Record<string, unknown>
-          >
-          const Root = 'Wrapper' in modal ? modal.Wrapper : defaultWrapper
+          const entry = modals[item.name]!
+          const isFlow = '__flow' in entry
+          const Root = isFlow ? entry.Wrapper : 'Wrapper' in entry ? entry.Wrapper : defaultWrapper
 
           if (!Root) {
             throw new Error(
@@ -345,6 +543,19 @@ export function createPushModal<TModals extends ModalRegistry>({
                 `createPushModal({ modals, defaultWrapper: Dialog.Root }).`
             )
           }
+
+          const body = isFlow ? (
+            <FlowHost definition={entry} initialProps={item.props} />
+          ) : (
+            <Suspense>
+              {React.createElement(
+                ('Component' in entry ? entry.Component : entry) as React.ComponentType<
+                  Record<string, unknown>
+                >,
+                item.props
+              )}
+            </Suspense>
+          )
 
           return (
             <Root
@@ -367,9 +578,7 @@ export function createPushModal<TModals extends ModalRegistry>({
                     replaceModalByKey(item.key, name as ModalKeys, props),
                 }}
               >
-                <Suspense>
-                  <Component {...item.props} />
-                </Suspense>
+                {body}
               </ModalControlsContext.Provider>
             </Root>
           )

@@ -6,7 +6,14 @@
 import React from 'react'
 import { describe, expectTypeOf, it } from 'vitest'
 
-import { createPushModal, modal, type ModalWrapperProps } from './factory'
+import {
+  createPushModal,
+  flow,
+  modal,
+  useFlowControls,
+  type FlowContentProps,
+  type ModalWrapperProps,
+} from './factory'
 
 const Root = ({ open, children }: ModalWrapperProps) => (open ? <div>{children}</div> : null)
 
@@ -105,6 +112,68 @@ describe('modal() result typing', () => {
     expectTypeOf(
       pushModalAsync('WithProps', { label: 'a', count: 1 })
     ).resolves.toEqualTypeOf<unknown>()
+  })
+})
+
+const Shell = ({ children }: FlowContentProps) => <div>{children}</div>
+
+const checkoutSteps = {
+  cart: ({ label }: { label: string }) => <div>{label}</div>,
+  payment: ({ amount }: { amount: number }) => <div>{amount}</div>,
+  done: () => <div>done</div>,
+}
+
+const flows = createPushModal({
+  modals: {
+    Checkout: flow<boolean>()({
+      Wrapper: Root,
+      Content: Shell,
+      initial: 'cart',
+      steps: checkoutSteps,
+    }),
+    Plain: flow({ Wrapper: Root, Content: Shell, initial: 'done', steps: checkoutSteps }),
+  },
+})
+
+describe('flow() typing', () => {
+  it('takes the initial step props when pushed', () => {
+    flows.pushModal('Checkout', { label: 'a' })
+    // the flow starting on `done` needs nothing
+    flows.pushModal('Plain')
+  })
+
+  it('rejects wrong or missing initial step props', () => {
+    // @ts-expect-error - label is required by the cart step
+    flows.pushModal('Checkout')
+    // @ts-expect-error - label is a string
+    flows.pushModal('Checkout', { label: 1 })
+  })
+
+  it('resolves the declared result type', () => {
+    expectTypeOf(flows.pushModalAsync('Checkout', { label: 'a' })).resolves.toEqualTypeOf<
+      boolean | undefined
+    >()
+  })
+
+  it('checks step names and their props on go()', () => {
+    const Step = () => {
+      const { go, replace } = useFlowControls<typeof checkoutSteps>()
+
+      go('payment', { amount: 1 })
+      go('done')
+      replace('cart', { label: 'a' })
+
+      // @ts-expect-error - amount is required
+      go('payment')
+      // @ts-expect-error - amount is a number
+      go('payment', { amount: 'no' })
+      // @ts-expect-error - not a step of this flow
+      go('nope')
+
+      return null
+    }
+
+    expectTypeOf(Step).toBeFunction()
   })
 })
 
