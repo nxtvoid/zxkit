@@ -12,6 +12,7 @@ import type {
   ExtractModalResult,
   ModalHandle,
   ModalInvocation,
+  ModalName,
   ModalRegistry,
   ModalWrapperProps,
 } from './types'
@@ -139,6 +140,66 @@ export function createPushModal<TModals extends ModalRegistry>({
     return emitter.emit('replace', { key, name, props })
   }
 
+  const ModalInstance = React.memo(function ModalInstance({ item }: { item: StateItem }) {
+    const controls = React.useMemo(
+      () => ({
+        key: item.key,
+        name: item.name,
+        close: () => closeModalByKey(item.key),
+        resolve: (value: unknown) => resolveModalByKey(item.key, value),
+        reject: (reason?: unknown) => rejectModalByKey(item.key, reason),
+        replace: (name: ModalName, props: Record<string, unknown> = {}) =>
+          replaceModalByKey(item.key, name as ModalKeys, props),
+      }),
+      [item.key, item.name]
+    )
+
+    const onOpenChange = React.useCallback(
+      (isOpen: boolean) => {
+        if (!isOpen) {
+          closeModalByKey(item.key)
+        }
+      },
+      [item.key]
+    )
+
+    const entry = modals[item.name]
+    if (!entry) {
+      assertRegistered(item.name)
+      return null
+    }
+
+    const isFlow = '__flow' in entry
+    const Root = ('Wrapper' in entry ? entry.Wrapper : undefined) ?? defaultWrapper
+
+    if (!Root) {
+      throw new Error(
+        `Modal "${String(item.name)}" declares no Wrapper, and createPushModal was called ` +
+          `without a defaultWrapper. Pass the root of your dialog primitive, e.g. ` +
+          `createPushModal({ modals, defaultWrapper: Dialog.Root }).`
+      )
+    }
+
+    const body = isFlow ? (
+      <FlowHost key={item.instance} definition={entry} initialProps={item.props} />
+    ) : (
+      <Suspense>
+        {React.createElement(
+          ('Component' in entry ? entry.Component : entry) as React.ComponentType<
+            Record<string, unknown>
+          >,
+          item.props
+        )}
+      </Suspense>
+    )
+
+    return (
+      <ModalRoot Root={Root} open={item.open} onOpenChange={onOpenChange}>
+        <ModalControlsContext.Provider value={controls}>{body}</ModalControlsContext.Provider>
+      </ModalRoot>
+    )
+  })
+
   function ModalProvider() {
     const [state, setState] = useState<StateItem[]>([])
 
@@ -243,64 +304,9 @@ export function createPushModal<TModals extends ModalRegistry>({
 
     return (
       <>
-        {state.map((item) => {
-          const entry = modals[item.name]
-          if (!entry) {
-            assertRegistered(item.name)
-            return null
-          }
-
-          const isFlow = '__flow' in entry
-          const Root = ('Wrapper' in entry ? entry.Wrapper : undefined) ?? defaultWrapper
-
-          if (!Root) {
-            throw new Error(
-              `Modal "${String(item.name)}" declares no Wrapper, and createPushModal was called ` +
-                `without a defaultWrapper. Pass the root of your dialog primitive, e.g. ` +
-                `createPushModal({ modals, defaultWrapper: Dialog.Root }).`
-            )
-          }
-
-          const body = isFlow ? (
-            <FlowHost key={item.instance} definition={entry} initialProps={item.props} />
-          ) : (
-            <Suspense>
-              {React.createElement(
-                ('Component' in entry ? entry.Component : entry) as React.ComponentType<
-                  Record<string, unknown>
-                >,
-                item.props
-              )}
-            </Suspense>
-          )
-
-          return (
-            <ModalRoot
-              key={item.key}
-              Root={Root}
-              open={item.open}
-              onOpenChange={(isOpen) => {
-                if (!isOpen) {
-                  closeModalByKey(item.key)
-                }
-              }}
-            >
-              <ModalControlsContext.Provider
-                value={{
-                  key: item.key,
-                  name: item.name,
-                  close: () => closeModalByKey(item.key),
-                  resolve: (value) => resolveModalByKey(item.key, value),
-                  reject: (reason) => rejectModalByKey(item.key, reason),
-                  replace: (name, props = {}) =>
-                    replaceModalByKey(item.key, name as ModalKeys, props),
-                }}
-              >
-                {body}
-              </ModalControlsContext.Provider>
-            </ModalRoot>
-          )
-        })}
+        {state.map((item) => (
+          <ModalInstance key={item.key} item={item} />
+        ))}
       </>
     )
   }
@@ -414,18 +420,27 @@ export function createPushModal<TModals extends ModalRegistry>({
     onPushModal,
     onCloseModal,
     useOnPushModal: <T extends ModalKeys>(name: T | '*', callback: EventCallback<T>) => {
+      // Held in a ref so an inline callback does not resubscribe on every render.
+      const latest = React.useRef(callback)
+      latest.current = callback
+
       useEffect(() => {
-        return onPushModal(name, callback)
-      }, [name, callback])
+        return onPushModal<T>(name, (...args) => latest.current(...args))
+      }, [name])
     },
     useOnCloseModal: <T extends ModalKeys>(
       name: T | '*',
       callback: CloseCallback<T>,
       options?: { delay?: number }
     ) => {
+      const latest = React.useRef(callback)
+      latest.current = callback
+
+      const delay = options?.delay
+
       useEffect(() => {
-        return onCloseModal(name, callback, options)
-      }, [name, callback, options])
+        return onCloseModal<T>(name, (...args) => latest.current(...args), { delay })
+      }, [name, delay])
     },
   }
 }
