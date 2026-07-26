@@ -283,6 +283,87 @@ describe('createPushModal defaultWrapper', () => {
   })
 
   // The package ships no primitive of its own, so this is the only failure mode
+  // A pushed modal does not exist until it is pushed, so the wrapper would otherwise
+  // mount with `open` already true. Primitives that read their enter animation off the
+  // open transition — Base UI seeds its `mounted` state with `open` — then apply no
+  // starting styles, and the panel appears with no entrance while the exit still
+  // animates. These tests pin the transition the wrapper is handed.
+  describe('open transition', () => {
+    function trackOpen(modals: Parameters<typeof createPushModal>[0]['modals']) {
+      const seen: (boolean | undefined)[] = []
+      const system = createPushModal({
+        defaultWrapper: ({ open, onOpenChange, children }) => {
+          seen.push(open)
+          return open ? (
+            <div data-testid='modal-root'>
+              <button type='button' onClick={() => onOpenChange?.(false)}>
+                close
+              </button>
+              {children}
+            </div>
+          ) : null
+        },
+        modals,
+      })
+      return { seen, ...system }
+    }
+
+    it('hands the wrapper a closed render before opening it', () => {
+      const { seen, ModalProvider, pushModal } = trackOpen({
+        example: modal(({ label }: { label: string }) => <div>{label}</div>),
+      })
+      render(<ModalProvider />)
+
+      act(() => {
+        pushModal('example', { label: 'first' })
+      })
+
+      expect(seen[0]).toBe(false)
+      expect(seen).toContain(true)
+      // Still mounted synchronously — the flip is a layout effect, not a frame.
+      expect(screen.queryByText('first')).not.toBeNull()
+    })
+
+    it('closes without an extra open render, so the exit still animates', () => {
+      const { seen, ModalProvider, pushModal } = trackOpen({
+        example: modal(({ label }: { label: string }) => <div>{label}</div>),
+      })
+      render(<ModalProvider />)
+
+      act(() => {
+        pushModal('example', { label: 'first' })
+      })
+      seen.length = 0
+
+      fireEvent.click(screen.getByRole('button', { name: 'close' }))
+
+      expect(seen).toContain(false)
+      expect(seen).not.toContain(true)
+    })
+
+    it('does not reopen the wrapper when the modal is replaced', () => {
+      const { seen, ModalProvider, pushModal, replaceWithModal } = trackOpen({
+        example: modal(({ label }: { label: string }) => <div>{label}</div>),
+        other: modal(() => <div>other</div>),
+      })
+      render(<ModalProvider />)
+
+      act(() => {
+        pushModal('example', { label: 'first' })
+      })
+      seen.length = 0
+
+      act(() => {
+        replaceWithModal('other')
+      })
+
+      // A replace keeps the same slot open. Dropping back to false here would blink
+      // the wrapper shut and replay its entrance.
+      expect(seen).not.toContain(false)
+      expect(screen.queryByText('other')).not.toBeNull()
+    })
+  })
+
   // left when a consumer forgets to supply one.
   it('throws a directive error when neither a Wrapper nor a defaultWrapper exists', () => {
     const { ModalProvider, pushModal } = createPushModal({ modals: bareModals })

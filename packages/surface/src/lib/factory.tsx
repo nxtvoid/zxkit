@@ -246,6 +246,49 @@ export function useFlowControls<Steps extends StepRegistry = StepRegistry>() {
   return context as FlowControls<Steps>
 }
 
+// `useLayoutEffect` warns when rendered on the server. The provider only ever has
+// modals after a client-side push, but the guard keeps SSR quiet either way.
+const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : React.useLayoutEffect
+
+/**
+ * Renders the wrapper closed for one render, then opens it.
+ *
+ * A pushed modal does not exist until it is pushed, so without this the wrapper's
+ * very first render already has `open: true`. Primitives that derive their enter
+ * animation from a CSS animation (Radix `data-[state=open]:animate-in`) do not care,
+ * because animations replay on mount. Primitives that derive it from the open
+ * *transition* do: Base UI seeds `mounted` with `open`, so mounting open makes its
+ * `open && !mounted` check never fire, no `data-starting-style` is applied, and the
+ * panel appears with no entrance while the exit still animates.
+ *
+ * The flip runs in a layout effect rather than an animation frame, so React commits
+ * both renders before the browser paints. There is no blank frame, and the modal is
+ * still in the tree synchronously for tests and for anything reading the DOM.
+ */
+function ModalRoot({
+  Root,
+  open,
+  onOpenChange,
+  children,
+}: {
+  Root: React.ComponentType<ModalWrapperProps>
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children?: React.ReactNode
+}) {
+  const [entered, setEntered] = useState(false)
+
+  useIsoLayoutEffect(() => {
+    setEntered(true)
+  }, [])
+
+  return (
+    <Root open={open && entered} onOpenChange={onOpenChange}>
+      {children}
+    </Root>
+  )
+}
+
 type FlowStackEntry = { name: string; props: Record<string, unknown> }
 
 /**
@@ -577,8 +620,9 @@ export function createPushModal<TModals extends ModalRegistry>({
           )
 
           return (
-            <Root
+            <ModalRoot
               key={item.key}
+              Root={Root}
               open={item.open}
               onOpenChange={(isOpen) => {
                 if (!isOpen) {
@@ -599,7 +643,7 @@ export function createPushModal<TModals extends ModalRegistry>({
               >
                 {body}
               </ModalControlsContext.Provider>
-            </Root>
+            </ModalRoot>
           )
         })}
       </>
