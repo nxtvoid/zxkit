@@ -13,7 +13,7 @@ import {
   useFlowControls,
   type FlowContentProps,
   type ModalWrapperProps,
-} from './factory'
+} from '../index'
 
 const Root = ({ open, children }: ModalWrapperProps) => (open ? <div>{children}</div> : null)
 

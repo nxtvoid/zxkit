@@ -8,9 +8,7 @@ export interface WrapperProps {
   modal?: boolean
 }
 
-// Only DOM-standard props are named here. Primitive-specific escape hatches
-// (focus/outside-interaction callbacks, whose names differ per library) pass
-// through the index signature untyped.
+// Primitive-specific callbacks pass through the index signature untyped.
 export interface ContentProps {
   children?: React.ReactNode
   className?: string
@@ -52,7 +50,6 @@ export function createResponsiveWrapper({
   desktop,
   breakpoint = 640,
 }: Options): ResponsiveWrapperReturn {
-  // Create a context to share the isMobile state between Wrapper and Content
   const ResponsiveContext = createContext<boolean | undefined>(undefined)
 
   const mediaQuery = `(max-width: ${breakpoint}px)`
@@ -77,7 +74,7 @@ export function createResponsiveWrapper({
     return useSyncExternalStore(
       subscribe,
       getSnapshot,
-      // server snapshot is always false (desktop) to match initial client render and avoid hydration mismatch
+      // Desktop on the server, to match the initial client render.
       () => false
     )
   }
@@ -91,7 +88,6 @@ export function createResponsiveWrapper({
     const stateStore = useRef(new Map<string, unknown>()).current
     const WrapperComponent = isMobile ? mobile.Wrapper : desktop.Wrapper
 
-    // Clear the preserved state store when the dialog/drawer closes
     useEffect(() => {
       if (props.open === false) {
         stateStore.clear()
@@ -119,7 +115,6 @@ export function createResponsiveWrapper({
     return <ContentComponent {...props} />
   }
 
-  // Hook to preserve state across unmounts. State is stored in the StateStoreContext and keyed by the provided key.
   const usePreservedState: <T>(
     key: string,
     initialValue: T
@@ -127,8 +122,6 @@ export function createResponsiveWrapper({
     const store = useContext(StateStoreContext)
 
     const [state, setState] = useState<T>(() => {
-      // if the store already has a value for this key, use it.
-      // Otherwise, use the provided initial value
       if (store.has(key)) return store.get(key) as T
       return initialValue
     })

@@ -12,7 +12,7 @@ import {
   useModalControls,
   type FlowContentProps,
   type ModalWrapperProps,
-} from './factory'
+} from '../index'
 
 // @ts-expect-error - just a test file, we can set this global
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -99,7 +99,7 @@ function setup() {
     modals: {
       Checkout: flow<boolean>()({ Wrapper, Content: Shell, initial: 'cart', steps }),
 
-      // a second flow with no step names in common, to catch step state leaking across a replace
+      // no step names in common, to catch step state leaking across a replace
       Other: flow({ Wrapper, Content: Shell, initial: 'other', steps: { other: OtherStep } }),
       Titled: flow({ Wrapper, Content: Shell, initial: 'titled', steps: { titled: TitledStep } }),
 
@@ -125,8 +125,7 @@ describe('flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'to payment' }))
 
     expect(screen.queryByText('payment: 42')).not.toBeNull()
-    // Same DOM node: React reconciled the shell instead of tearing it down, so the
-    // primitive never replays its open animation.
+    // Same DOM node: React reconciled the shell instead of tearing it down.
     expect(screen.getByTestId('shell')).toBe(shellBefore)
   })
 
@@ -262,8 +261,7 @@ describe('flow', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'to payment' }))
 
-    // A replaced modal keeps its key, so without a fresh body the incoming flow would
-    // inherit the outgoing one's step stack and look up a step it does not have.
+    // Without a fresh body the incoming flow inherits the outgoing one's step stack.
     act(() => {
       replaceWithModal('Other')
     })

@@ -4,7 +4,7 @@ import React, { act } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createPushModal, modal, useModalControls } from './factory'
+import { createPushModal, modal, useModalControls } from '../index'
 
 // @ts-expect-error - just a test file, we can set this global
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -282,12 +282,8 @@ describe('createPushModal defaultWrapper', () => {
     expect(screen.queryByTestId('default-root')).toBeNull()
   })
 
-  // The package ships no primitive of its own, so this is the only failure mode
-  // A pushed modal does not exist until it is pushed, so the wrapper would otherwise
-  // mount with `open` already true. Primitives that read their enter animation off the
-  // open transition — Base UI seeds its `mounted` state with `open` — then apply no
-  // starting styles, and the panel appears with no entrance while the exit still
-  // animates. These tests pin the transition the wrapper is handed.
+  // Primitives that read their enter animation off the open transition need to see
+  // the wrapper go from closed to open.
   describe('open transition', () => {
     function trackOpen(modals: Parameters<typeof createPushModal>[0]['modals']) {
       const seen: (boolean | undefined)[] = []
@@ -357,16 +353,12 @@ describe('createPushModal defaultWrapper', () => {
         replaceWithModal('other')
       })
 
-      // A replace keeps the same slot open. Dropping back to false here would blink
-      // the wrapper shut and replay its entrance.
+      // Dropping back to false here would blink the wrapper shut.
       expect(seen).not.toContain(false)
       expect(screen.queryByText('other')).not.toBeNull()
     })
   })
 
-  // An unregistered name used to reach the internal registry lookup and surface as
-  // "Cannot use 'in' operator to search for '__flow' in undefined", which says nothing
-  // about what the caller did wrong.
   describe('unregistered modal names', () => {
     const system = () =>
       createPushModal({
@@ -410,8 +402,7 @@ describe('createPushModal defaultWrapper', () => {
       expectNamedError(() => handle.replace('TestSheet'))
     })
 
-    // This one has no type safety at all: useModalControls cannot know the registry,
-    // so a typo here compiles cleanly and only the runtime check catches it.
+    // useModalControls cannot know the registry, so a typo here compiles cleanly.
     it('does the same for useModalControls().replace, which is untyped', () => {
       let replaceFromInside: (name: string) => void = () => {}
 
@@ -469,8 +460,7 @@ describe('createPushModal defaultWrapper', () => {
 
     it('says so plainly when the registry is empty', () => {
       const { pushModal } = createPushModal({ modals: {} })
-      // With no entries the name type degenerates to `never`, so call through a cast
-      // rather than assert on an arity error that says nothing about the behaviour.
+      // With no entries the name type degenerates to `never`.
       const push = pushModal as unknown as (name: string) => void
 
       expect(() => push('Anything')).toThrow(
@@ -479,6 +469,7 @@ describe('createPushModal defaultWrapper', () => {
     })
   })
 
+  // The package ships no primitive of its own, so this is the only failure mode
   // left when a consumer forgets to supply one.
   it('throws a directive error when neither a Wrapper nor a defaultWrapper exists', () => {
     const { ModalProvider, pushModal } = createPushModal({ modals: bareModals })

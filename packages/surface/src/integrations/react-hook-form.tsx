@@ -1,12 +1,9 @@
 import { FieldValues, DefaultValues, UseFormProps, UseFormReturn, useForm } from 'react-hook-form'
 import { useEffect, useRef } from 'react'
 
-import type { PreservedStore } from './responsive'
+import type { PreservedStore } from '../core/responsive'
 
-// Portable wrapper interfaces — defined in THIS package so TypeScript can
-// reference them as '@zxkit/surface/react-hook-form'.PreservedFormOptions etc. in
-// declaration emit, instead of needing to resolve react-hook-form through bun's
-// internal paths.
+// Declared here rather than aliased, so declaration emit points at this package.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface PreservedFormOptions<
   T extends Record<string, unknown> = Record<string, unknown>,
@@ -37,21 +34,16 @@ export function createPreservedForm(usePreservedStore: () => PreservedStore): Us
 
     const form = useForm<T>({
       ...options,
-      // Use stored values as initial defaultValues so data is visible immediately (no flash)
       defaultValues: (hasStoredValues ? store.get(key) : options.defaultValues) as DefaultValues<T>,
     })
 
-    // When restoring from store, the stored values ARE the defaultValues,
-    // so isDirty is false. Fix this by re-establishing the original defaults
-    // as the baseline, then restoring the stored values with keepDefaultValues.
+    // Restored values would otherwise become the defaults, leaving isDirty false.
     const didRestore = useRef(hasStoredValues)
     useEffect(() => {
       if (didRestore.current) {
         didRestore.current = false
         const currentValues = form.getValues()
-        // Set internal defaults back to the originals
         form.reset(options.defaultValues as DefaultValues<T> as T)
-        // Restore stored values, keeping original defaults as the isDirty baseline
         form.reset(currentValues as T, { keepDefaultValues: true })
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,1 +1,1 @@
-export * from './lib/react-hook-form'
+export * from './integrations/react-hook-form'

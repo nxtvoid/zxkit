@@ -4,7 +4,7 @@ import React, { act } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { createResponsiveWrapper, type ContentProps, type WrapperProps } from './responsive'
+import { createResponsiveWrapper, type ContentProps, type WrapperProps } from '../index'
 import { createPreservedForm } from './react-hook-form'
 
 // @ts-expect-error - just a test file, we can set this global
