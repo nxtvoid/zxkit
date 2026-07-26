@@ -1,5 +1,6 @@
 import type React from 'react'
 import { createPushModal, modal } from '@zxkit/surface'
+import { Dialog } from '@zxkit/ui/dialog'
 import { DynamicWrapper } from './dynamic'
 
 import { DefaultModalExample } from './example/default-example'
@@ -21,6 +22,8 @@ export const {
   onPushModal,
   ModalProvider,
 } = createPushModal({
+  // Sheet shares this root under the hood.
+  defaultWrapper: Dialog,
   modals: {
     // just dialog
     DefaultExample: modal<Record<never, never>>(DefaultModalExample),

@@ -9,15 +9,13 @@ export interface WrapperProps {
   modal?: boolean
 }
 
+// Only DOM-standard props are named here. Primitive-specific escape hatches
+// (focus/outside-interaction callbacks, whose names differ per library) pass
+// through the index signature untyped.
 export interface ContentProps {
   children?: React.ReactNode
   className?: string
   onAnimationEnd?: (...args: unknown[]) => void
-  onOpenAutoFocus?: (event: Event) => void
-  onCloseAutoFocus?: (event: Event) => void
-  onEscapeKeyDown?: (event: KeyboardEvent) => void
-  onPointerDownOutside?: (event: Event) => void
-  onInteractOutside?: (event: Event) => void
   [key: string]: unknown
 }
 

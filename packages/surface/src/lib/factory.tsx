@@ -2,10 +2,14 @@
 
 import React, { Suspense, useEffect, useState } from 'react'
 import mitt, { Handler } from 'mitt'
-import { Dialog } from 'radix-ui'
 
 type ModalName = string | number | symbol
-type ModalWrapperProps = {
+
+/**
+ * Shape a wrapper component must accept to host a modal. Deliberately minimal so any
+ * headless primitive (or a hand-written shim over one) can satisfy it.
+ */
+export type ModalWrapperProps = {
   open?: boolean
   onOpenChange?: (open: boolean) => void
   children?: React.ReactNode
@@ -79,10 +83,16 @@ export function useModalControls<TResult = unknown>() {
 
 interface CreatePushModalOptions<TModals extends ModalRegistry> {
   modals: TModals
+  /**
+   * Wrapper used for modals that do not declare their own `Wrapper`.
+   * Pass the root of whatever dialog primitive the app uses.
+   */
+  defaultWrapper?: React.ComponentType<ModalWrapperProps>
 }
 
 export function createPushModal<TModals extends ModalRegistry>({
   modals,
+  defaultWrapper,
 }: CreatePushModalOptions<TModals>) {
   type Modals = TModals
   type ModalKeys = keyof Modals
@@ -290,7 +300,15 @@ export function createPushModal<TModals extends ModalRegistry>({
           const Component = ('Component' in modal ? modal.Component : modal) as React.ComponentType<
             Record<string, unknown>
           >
-          const Root = 'Wrapper' in modal ? modal.Wrapper : Dialog.Root
+          const Root = 'Wrapper' in modal ? modal.Wrapper : defaultWrapper
+
+          if (!Root) {
+            throw new Error(
+              `Modal "${String(item.name)}" declares no Wrapper, and createPushModal was called ` +
+                `without a defaultWrapper. Pass the root of your dialog primitive, e.g. ` +
+                `createPushModal({ modals, defaultWrapper: Dialog.Root }).`
+            )
+          }
 
           return (
             <Root
