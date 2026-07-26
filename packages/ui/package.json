@@ -17,6 +17,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@base-ui/react": "^1.6.0",
     "@tailwindcss/postcss": "^4.1.11",
     "@turbo/gen": "^2.5.5",
     "@types/node": "^20.19.9",
@@ -46,6 +47,8 @@
     "./postcss.config": "./postcss.config.mjs",
     "./lib/*": "./src/lib/*.ts",
     "./hooks/*": "./src/hooks/*.ts",
+    "./components/*": "./src/components/*.tsx",
+    "./base-ui/*": "./src/components/base-ui/*.tsx",
     "./badge": "./src/components/badge.tsx",
     "./button": "./src/components/button.tsx",
     "./button-group": "./src/components/button-group.tsx",
