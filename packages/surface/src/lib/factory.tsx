@@ -34,9 +34,14 @@ type ExtractModalResult<T> = T extends { __modalResult?: infer R } ? R : unknown
 type Prettify<T> = {
   [K in keyof T]: T[K]
 } & Record<never, never>
-type ModalArgs<T> = keyof Prettify<ExtractModalProps<T>> extends never
+type ModalProps<T> = Prettify<ExtractModalProps<T>>
+// Three cases, in order: the modal takes no props at all; it takes only optional
+// ones, so the argument itself is optional; it has at least one required prop.
+type ModalArgs<T> = keyof ModalProps<T> extends never
   ? []
-  : [props: Prettify<ExtractModalProps<T>>]
+  : Record<never, never> extends ModalProps<T>
+    ? [props?: ModalProps<T>]
+    : [props: ModalProps<T>]
 // `React.ComponentType` is invariant in its props, so the modal registry constraint
 // needs a permissive placeholder type to preserve inference for each concrete modal entry.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

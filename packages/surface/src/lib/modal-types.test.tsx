@@ -17,6 +17,13 @@ const WithProps = ({ label, count }: { label: string; count: number }) => (
     {count}
   </div>
 )
+const AllOptional = ({ text }: { text?: number }) => <div>{text}</div>
+const Mixed = ({ id, note }: { id: string; note?: string }) => (
+  <div>
+    {id}
+    {note}
+  </div>
+)
 
 const { pushModal, pushModalAsync } = createPushModal({
   defaultWrapper: Root,
@@ -24,6 +31,8 @@ const { pushModal, pushModalAsync } = createPushModal({
     // bare component — props inferred, no explicit generic
     NoProps: modal(NoProps),
     WithProps: modal(WithProps),
+    AllOptional: modal(AllOptional),
+    Mixed: modal(Mixed),
 
     // object form — props inferred off Component
     Wrapped: modal({ Wrapper: Root, Component: WithProps }),
@@ -50,6 +59,21 @@ describe('modal() prop inference', () => {
   it('keeps prop inference when a result type is supplied', () => {
     pushModal('Confirm', { label: 'a', count: 1 })
     pushModal('ConfirmWrapped')
+  })
+
+  it('makes the argument optional when every prop is optional', () => {
+    pushModal('AllOptional')
+    pushModal('AllOptional', {})
+    pushModal('AllOptional', { text: 1 })
+  })
+
+  it('still requires the argument when any prop is required', () => {
+    pushModal('Mixed', { id: 'a' })
+    pushModal('Mixed', { id: 'a', note: 'b' })
+    // @ts-expect-error - id is required, so the argument stays required
+    pushModal('Mixed')
+    // @ts-expect-error - id is still required inside the object
+    pushModal('Mixed', { note: 'b' })
   })
 
   it('rejects wrong props, missing props, and unknown names', () => {
