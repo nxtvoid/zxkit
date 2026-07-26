@@ -289,6 +289,44 @@ function ModalRoot({
   )
 }
 
+/**
+ * How many registered names an error lists. A registry can hold hundreds; dumping
+ * all of them buries the message.
+ */
+const MAX_LISTED_NAMES = 8
+
+/**
+ * Orders names by how close they look to the one that missed, so the few an error
+ * has room for are the ones worth reading. Deliberately cheap — a prefix and
+ * containment check catches the typos that actually happen (wrong casing, a wrong
+ * suffix on a shared stem) without shipping an edit-distance implementation.
+ */
+function byLikenessTo(target: string) {
+  const needle = target.toLowerCase()
+
+  const score = (candidate: string) => {
+    const other = candidate.toLowerCase()
+    if (other === needle) return 3 // right name, wrong casing
+    if (other.includes(needle) || needle.includes(other)) return 2
+
+    let shared = 0
+    while (shared < other.length && shared < needle.length && other[shared] === needle[shared]) {
+      shared += 1
+    }
+    return shared === 0 ? 0 : 1 + shared / needle.length
+  }
+
+  return (a: string, b: string) => score(b) - score(a)
+}
+
+function listNames(target: string, known: string[]) {
+  const ranked = [...known].sort(byLikenessTo(target))
+  const shown = ranked.slice(0, MAX_LISTED_NAMES)
+  const hidden = ranked.length - shown.length
+
+  return hidden > 0 ? `${shown.join(', ')}, +${hidden} more` : shown.join(', ')
+}
+
 type FlowStackEntry = { name: string; props: Record<string, unknown> }
 
 /**
@@ -328,7 +366,7 @@ function FlowHost({
 
   if (!StepComponent) {
     throw new Error(
-      `Flow step "${current.name}" is not registered. Known steps: ${Object.keys(definition.steps).join(', ')}.`
+      `Flow step "${current.name}" is not registered. Known steps, closest first: ${listNames(current.name, Object.keys(definition.steps))}.`
     )
   }
 
@@ -482,12 +520,36 @@ export function createPushModal<TModals extends ModalRegistry>({
     popModalByKey(key)
   }
 
-  const replaceModalByKey = (key: string, name: ModalKeys, props: Record<string, unknown>) =>
-    emitter.emit('replace', {
+  /**
+   * Every way into the stack goes through here, so an unregistered name fails with a
+   * message naming the culprit instead of surfacing later as an internal lookup error.
+   *
+   * Worth checking at runtime even though most entry points are typed:
+   * `useModalControls().replace` cannot know the registry, so a typo there reaches
+   * this with nothing having flagged it.
+   */
+  const assertRegistered = (name: ModalKeys) => {
+    if (name in modals) return
+
+    const known = Object.keys(modals)
+
+    throw new Error(
+      `Modal "${String(name)}" is not registered with createPushModal. ` +
+        (known.length > 0
+          ? `Known modals, closest first: ${listNames(String(name), known)}.`
+          : 'The modals object passed to createPushModal is empty.')
+    )
+  }
+
+  const replaceModalByKey = (key: string, name: ModalKeys, props: Record<string, unknown>) => {
+    assertRegistered(name)
+
+    return emitter.emit('replace', {
       key,
       name,
       props,
     })
+  }
 
   function ModalProvider() {
     const [state, setState] = useState<StateItem[]>([])
@@ -594,7 +656,11 @@ export function createPushModal<TModals extends ModalRegistry>({
     return (
       <>
         {state.map((item) => {
-          const entry = modals[item.name]!
+          const entry = modals[item.name]
+          if (!entry) {
+            assertRegistered(item.name)
+            return null
+          }
           const isFlow = '__flow' in entry
           const Root = ('Wrapper' in entry ? entry.Wrapper : undefined) ?? defaultWrapper
 
@@ -668,6 +734,8 @@ export function createPushModal<TModals extends ModalRegistry>({
     const [props] = args
     const key = createModalKey()
 
+    assertRegistered(name)
+
     emitter.emit('push', {
       key,
       name,
@@ -685,6 +753,9 @@ export function createPushModal<TModals extends ModalRegistry>({
   const replaceWithModal = <T extends StateItem['name']>(...invocation: ModalInvocationFor<T>) => {
     const [name, ...args] = invocation
     const [props] = args
+
+    assertRegistered(name)
+
     emitter.emit('replace', {
       name,
       props: props ?? {},
@@ -698,6 +769,8 @@ export function createPushModal<TModals extends ModalRegistry>({
     const [name, ...args] = invocation
     const [props] = args
     const key = createModalKey()
+
+    assertRegistered(name)
 
     return new Promise<unknown | undefined>((resolve, reject) => {
       asyncResolutions.set(key, {

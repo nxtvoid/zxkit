@@ -84,12 +84,18 @@ describe('modal() prop inference', () => {
   })
 
   it('rejects wrong props, missing props, and unknown names', () => {
-    // @ts-expect-error - count is a number
-    pushModal('WithProps', { label: 'a', count: 'nope' })
-    // @ts-expect-error - props are required
-    pushModal('WithProps')
-    // @ts-expect-error - not in the registry
-    pushModal('Nope')
+    // Compile-time assertions only. An unregistered name now throws at runtime, so
+    // these are checked by tsc and never executed.
+    const assertions = () => {
+      // @ts-expect-error - count is a number
+      pushModal('WithProps', { label: 'a', count: 'nope' })
+      // @ts-expect-error - props are required
+      pushModal('WithProps')
+      // @ts-expect-error - not in the registry
+      pushModal('Nope')
+    }
+
+    expectTypeOf(assertions).toBeFunction()
   })
 
   it('rejects a props type where a component belongs', () => {

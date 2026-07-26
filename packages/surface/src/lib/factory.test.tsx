@@ -364,6 +364,121 @@ describe('createPushModal defaultWrapper', () => {
     })
   })
 
+  // An unregistered name used to reach the internal registry lookup and surface as
+  // "Cannot use 'in' operator to search for '__flow' in undefined", which says nothing
+  // about what the caller did wrong.
+  describe('unregistered modal names', () => {
+    const system = () =>
+      createPushModal({
+        defaultWrapper: ({ open, children }) => (open ? <div>{children}</div> : null),
+        modals: {
+          AppMenuSheet: modal(() => <div>menu</div>),
+          TestModal: modal(() => <div>test</div>),
+        },
+      })
+
+    const expectNamedError = (run: () => unknown) => {
+      expect(run).toThrow(/Modal "TestSheet" is not registered with createPushModal/)
+      // TestModal first: it shares the "Test" stem with the name that missed.
+      expect(run).toThrow(/Known modals, closest first: TestModal, AppMenuSheet\./)
+    }
+
+    it('names the modal and lists the registered ones on push', () => {
+      const { pushModal } = system()
+      // @ts-expect-error - the point of the test is the runtime message
+      expectNamedError(() => pushModal('TestSheet'))
+    })
+
+    it('does the same for pushModalAsync and replaceWithModal', () => {
+      const { pushModalAsync, replaceWithModal } = system()
+      // @ts-expect-error - unregistered on purpose
+      expectNamedError(() => pushModalAsync('TestSheet'))
+      // @ts-expect-error - unregistered on purpose
+      expectNamedError(() => replaceWithModal('TestSheet'))
+    })
+
+    it('does the same for a handle replace', () => {
+      const { ModalProvider, pushModal } = system()
+      render(<ModalProvider />)
+
+      let handle: ReturnType<typeof pushModal>
+      act(() => {
+        handle = pushModal('TestModal')
+      })
+
+      // @ts-expect-error - unregistered on purpose
+      expectNamedError(() => handle.replace('TestSheet'))
+    })
+
+    // This one has no type safety at all: useModalControls cannot know the registry,
+    // so a typo here compiles cleanly and only the runtime check catches it.
+    it('does the same for useModalControls().replace, which is untyped', () => {
+      let replaceFromInside: (name: string) => void = () => {}
+
+      const { ModalProvider, pushModal } = createPushModal({
+        defaultWrapper: ({ open, children }) => (open ? <div>{children}</div> : null),
+        modals: {
+          AppMenuSheet: modal(() => <div>menu</div>),
+          TestModal: modal(() => {
+            const { replace } = useModalControls()
+            replaceFromInside = replace
+            return <div>test</div>
+          }),
+        },
+      })
+      render(<ModalProvider />)
+
+      act(() => {
+        pushModal('TestModal')
+      })
+
+      expectNamedError(() => replaceFromInside('TestSheet'))
+    })
+
+    it('caps a large registry and counts the rest', () => {
+      const many = Object.fromEntries(
+        Array.from({ length: 200 }, (_, i) => [`Modal${i}`, modal(() => <div>x</div>)])
+      )
+      const { pushModal } = createPushModal({ modals: many })
+      const push = pushModal as unknown as (name: string) => void
+
+      let message = ''
+      try {
+        push('Nope')
+      } catch (error) {
+        message = (error as Error).message
+      }
+
+      // Eight names and a count, not a wall of two hundred.
+      const listed = message.slice(message.indexOf('closest first: ')).split(', ')
+      expect(listed).toHaveLength(9)
+      expect(message).toContain('+192 more.')
+    })
+
+    it('puts the closest name first, including a casing-only mistake', () => {
+      const { pushModal } = createPushModal({
+        modals: {
+          AppMenuSheet: modal(() => <div>a</div>),
+          TestModal: modal(() => <div>b</div>),
+        },
+      })
+      const push = pushModal as unknown as (name: string) => void
+
+      expect(() => push('testmodal')).toThrow(/closest first: TestModal, AppMenuSheet\./)
+    })
+
+    it('says so plainly when the registry is empty', () => {
+      const { pushModal } = createPushModal({ modals: {} })
+      // With no entries the name type degenerates to `never`, so call through a cast
+      // rather than assert on an arity error that says nothing about the behaviour.
+      const push = pushModal as unknown as (name: string) => void
+
+      expect(() => push('Anything')).toThrow(
+        /The modals object passed to createPushModal is empty\./
+      )
+    })
+  })
+
   // left when a consumer forgets to supply one.
   it('throws a directive error when neither a Wrapper nor a defaultWrapper exists', () => {
     const { ModalProvider, pushModal } = createPushModal({ modals: bareModals })
