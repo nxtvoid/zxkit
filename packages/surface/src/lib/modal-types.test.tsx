@@ -157,11 +157,11 @@ describe('flow() typing', () => {
 
   it('checks step names and their props on go()', () => {
     const Step = () => {
-      const { go, replace } = useFlowControls<typeof checkoutSteps>()
+      const { go, replaceStep } = useFlowControls<typeof checkoutSteps>()
 
       go('payment', { amount: 1 })
       go('done')
-      replace('cart', { label: 'a' })
+      replaceStep('cart', { label: 'a' })
 
       // @ts-expect-error - amount is required
       go('payment')

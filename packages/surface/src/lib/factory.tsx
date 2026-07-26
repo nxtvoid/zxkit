@@ -37,7 +37,7 @@ type StepRegistry = Record<string, React.ComponentType<any>>
  */
 export type FlowDefinition<Steps extends StepRegistry, Props, Result = unknown> = {
   __flow: true
-  Wrapper: React.ComponentType<ModalWrapperProps>
+  Wrapper?: React.ComponentType<ModalWrapperProps>
   Content: React.ComponentType<FlowContentProps>
   steps: Steps
   initial: keyof Steps & string
@@ -138,13 +138,17 @@ export function modal(definition?: ModalInput) {
 type FlowInput<Steps extends StepRegistry, Initial extends keyof Steps & string> = {
   /**
    * Root of the dialog primitive, e.g. `Dialog.Root` or a responsive wrapper.
-   * Rendered once for the whole flow.
+   * Rendered once for the whole flow. Falls back to `defaultWrapper` when omitted,
+   * the same way a `modal()` entry does.
    */
-  Wrapper: React.ComponentType<ModalWrapperProps>
+  Wrapper?: React.ComponentType<ModalWrapperProps>
   /**
    * The panel every step renders inside, e.g. `DialogContent`. Mounted once and
    * kept across step changes — this is what stops the open animation from
    * replaying. Steps must not render a Content of their own.
+   *
+   * Required: there is no `defaultContent`, because the panel is what each flow
+   * shapes for itself.
    */
   Content: React.ComponentType<FlowContentProps>
   /**
@@ -211,8 +215,13 @@ export interface FlowControls<Steps extends StepRegistry = StepRegistry> {
   go: <TName extends keyof Steps & string>(
     ...invocation: [name: TName, ...StepArgs<Steps[TName]>]
   ) => void
-  /** Moves without leaving a step behind, so `back()` skips the one being replaced. */
-  replace: <TName extends keyof Steps & string>(
+  /**
+   * Moves without leaving a step behind, so `back()` skips the one being replaced.
+   *
+   * Named apart from `useModalControls().replace`, which swaps the whole modal for
+   * a different one. A step can reach both, and they act on different things.
+   */
+  replaceStep: <TName extends keyof Steps & string>(
     ...invocation: [name: TName, ...StepArgs<Steps[TName]>]
   ) => void
   /** Returns to the previous step. No-op on the first step. */
@@ -266,7 +275,8 @@ function FlowHost({
       step: current.name,
       canGoBack: stack.length > 1,
       go: (name, props) => setStack((s) => [...s, { name, props: props ?? {} }]),
-      replace: (name, props) => setStack((s) => [...s.slice(0, -1), { name, props: props ?? {} }]),
+      replaceStep: (name, props) =>
+        setStack((s) => [...s.slice(0, -1), { name, props: props ?? {} }]),
       back: () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)),
       reset: () => setStack(firstStep),
     }),
@@ -359,6 +369,13 @@ export function createPushModal<TModals extends ModalRegistry>({
     props: Record<string, unknown>
     open: boolean
     closedAt?: number
+    /**
+     * Bumped every time this slot is replaced. A replaced modal keeps its `key` so
+     * the wrapper stays mounted, which means React also reconciles whatever is
+     * inside it — including a flow's step state. Keying the body on this discards
+     * that state, so a replaced flow restarts instead of resuming another flow's steps.
+     */
+    instance: number
   }
 
   const filterGarbage = (item: StateItem): boolean => {
@@ -383,6 +400,7 @@ export function createPushModal<TModals extends ModalRegistry>({
     name,
     props,
     open: true,
+    instance: 0,
   })
 
   const resolveAsyncModal = (key: string, value: unknown) => {
@@ -474,6 +492,7 @@ export function createPushModal<TModals extends ModalRegistry>({
                   props,
                   open: true,
                   closedAt: undefined,
+                  instance: item.instance + 1,
                 }
               : item
           )
@@ -534,7 +553,7 @@ export function createPushModal<TModals extends ModalRegistry>({
         {state.map((item) => {
           const entry = modals[item.name]!
           const isFlow = '__flow' in entry
-          const Root = isFlow ? entry.Wrapper : 'Wrapper' in entry ? entry.Wrapper : defaultWrapper
+          const Root = ('Wrapper' in entry ? entry.Wrapper : undefined) ?? defaultWrapper
 
           if (!Root) {
             throw new Error(
@@ -545,7 +564,7 @@ export function createPushModal<TModals extends ModalRegistry>({
           }
 
           const body = isFlow ? (
-            <FlowHost definition={entry} initialProps={item.props} />
+            <FlowHost key={item.instance} definition={entry} initialProps={item.props} />
           ) : (
             <Suspense>
               {React.createElement(

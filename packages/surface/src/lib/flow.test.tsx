@@ -74,7 +74,7 @@ const PaymentStep = ({ amount }: { amount: number }) => {
 }
 
 const DoneStep = () => {
-  const { reset, replace } = useFlowControls<typeof steps>()
+  const { reset, replaceStep } = useFlowControls<typeof steps>()
 
   return (
     <div>
@@ -82,7 +82,7 @@ const DoneStep = () => {
       <button type='button' onClick={reset}>
         restart
       </button>
-      <button type='button' onClick={() => replace('cart', { label: 'again' })}>
+      <button type='button' onClick={() => replaceStep('cart', { label: 'again' })}>
         replace with cart
       </button>
     </div>
@@ -91,10 +91,17 @@ const DoneStep = () => {
 
 const steps = { cart: CartStep, payment: PaymentStep, done: DoneStep }
 
+const OtherStep = () => <div>other</div>
+const TitledStep = ({ title }: { title: string }) => <div>title: {title}</div>
+
 function setup() {
   return createPushModal({
     modals: {
       Checkout: flow<boolean>()({ Wrapper, Content: Shell, initial: 'cart', steps }),
+
+      // a second flow with no step names in common, to catch step state leaking across a replace
+      Other: flow({ Wrapper, Content: Shell, initial: 'other', steps: { other: OtherStep } }),
+      Titled: flow({ Wrapper, Content: Shell, initial: 'titled', steps: { titled: TitledStep } }),
 
       // two plain modals, to contrast replace() against stepping
       First: modal({ Wrapper, Component: () => <div data-testid='shell'>first</div> }),
@@ -174,7 +181,7 @@ describe('flow', () => {
     expect(screen.getByTestId('can-go-back').textContent).toBe('false')
   })
 
-  it('replace() drops the current step so back() skips it', () => {
+  it('replaceStep() drops the current step so back() skips it', () => {
     const { ModalProvider, pushModal } = setup()
     render(<ModalProvider />)
 
@@ -244,6 +251,71 @@ describe('flow', () => {
     })
 
     await expect(result).resolves.toBeUndefined()
+  })
+
+  it('restarts when the slot is replaced by a different flow', () => {
+    const { ModalProvider, pushModal, replaceWithModal } = setup()
+    render(<ModalProvider />)
+
+    act(() => {
+      pushModal('Checkout', { label: 'one item' })
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'to payment' }))
+
+    // A replaced modal keeps its key, so without a fresh body the incoming flow would
+    // inherit the outgoing one's step stack and look up a step it does not have.
+    act(() => {
+      replaceWithModal('Other')
+    })
+
+    expect(screen.queryByText('other')).not.toBeNull()
+  })
+
+  it('restarts when replaced by the same flow with new props', () => {
+    const { ModalProvider, pushModal, replaceWithModal } = setup()
+    render(<ModalProvider />)
+
+    act(() => {
+      pushModal('Titled', { title: 'first' })
+    })
+    expect(screen.queryByText('title: first')).not.toBeNull()
+
+    act(() => {
+      replaceWithModal('Titled', { title: 'second' })
+    })
+
+    expect(screen.queryByText('title: second')).not.toBeNull()
+  })
+
+  it('falls back to defaultWrapper when the flow declares no Wrapper', () => {
+    const { ModalProvider, pushModal } = createPushModal({
+      defaultWrapper: Wrapper,
+      modals: {
+        Bare: flow({ Content: Shell, initial: 'other', steps: { other: OtherStep } }),
+      },
+    })
+    render(<ModalProvider />)
+
+    act(() => {
+      pushModal('Bare')
+    })
+
+    expect(screen.queryByText('other')).not.toBeNull()
+  })
+
+  it('throws when a flow has no Wrapper and there is no defaultWrapper', () => {
+    const { ModalProvider, pushModal } = createPushModal({
+      modals: {
+        Bare: flow({ Content: Shell, initial: 'other', steps: { other: OtherStep } }),
+      },
+    })
+    render(<ModalProvider />)
+
+    expect(() =>
+      act(() => {
+        pushModal('Bare')
+      })
+    ).toThrow(/declares no Wrapper/)
   })
 
   it('throws when useFlowControls is used outside a flow', () => {
