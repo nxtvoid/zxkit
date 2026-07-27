@@ -111,14 +111,18 @@ type FlowStackEntry = { name: string; props: Record<string, unknown> }
 export function FlowHost({
   definition,
   initialProps,
+  initialStep,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   definition: FlowDefinition<any, any, any>
   initialProps: Record<string, unknown>
+  initialStep?: string
 }) {
+  // The entry step is the bottom of the stack, so `canGoBack` is false there and
+  // `reset()` returns to it rather than to the registered `initial`.
   const firstStep = React.useMemo<FlowStackEntry[]>(
-    () => [{ name: definition.initial, props: initialProps }],
-    [definition.initial, initialProps]
+    () => [{ name: initialStep ?? definition.initial, props: initialProps }],
+    [initialStep, definition.initial, initialProps]
   )
   const [stack, setStack] = useState<FlowStackEntry[]>(firstStep)
 

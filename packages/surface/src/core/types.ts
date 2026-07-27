@@ -68,7 +68,26 @@ export type ArgsFor<P> = keyof Prettify<P> extends never
     ? [props?: Prettify<P>]
     : [props: Prettify<P>]
 
-export type ModalArgs<T> = ArgsFor<ExtractModalProps<T>>
+type FlowSteps<T> = T extends { __flow: true; steps: infer S }
+  ? S extends StepRegistry
+    ? S
+    : never
+  : never
+
+/**
+ * Entering a flow at a step other than its registered `initial`. The step name is
+ * positional so it cannot collide with a prop name, and the props that follow are
+ * the ones that step declares.
+ */
+type StepEntryArgs<Steps extends StepRegistry> = {
+  [K in keyof Steps & string]: [step: K, ...ArgsFor<React.ComponentProps<Steps[K]>>]
+}[keyof Steps & string]
+
+// The guard keeps the union off every non-flow entry, which measured cheaper than
+// letting `StepEntryArgs` resolve to `never` and collapse.
+export type ModalArgs<T> = [FlowSteps<T>] extends [never]
+  ? ArgsFor<ExtractModalProps<T>>
+  : ArgsFor<ExtractModalProps<T>> | StepEntryArgs<FlowSteps<T>>
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type ModalRegistry = Record<
