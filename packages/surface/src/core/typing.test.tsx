@@ -161,6 +161,35 @@ describe('flow() typing', () => {
     >()
   })
 
+  it('accepts a step name before the props when pushing', () => {
+    const assertions = () => {
+      flows.pushModal('Checkout', 'payment', { amount: 1 })
+      flows.pushModal('Checkout', 'done')
+      flows.replaceWithModal('Checkout', 'payment', { amount: 1 })
+      // the registered initial still works without a step
+      flows.pushModal('Checkout', { label: 'a' })
+    }
+
+    expectTypeOf(assertions).toBeFunction()
+  })
+
+  it('rejects an unknown step, wrong step props and the step form on a plain modal', () => {
+    const assertions = () => {
+      // @ts-expect-error - not a step of this flow
+      flows.pushModal('Checkout', 'nope')
+      // @ts-expect-error - payment needs amount
+      flows.pushModal('Checkout', 'payment')
+      // @ts-expect-error - amount is a number
+      flows.pushModal('Checkout', 'payment', { amount: 'no' })
+      // @ts-expect-error - done takes no props
+      flows.pushModal('Checkout', 'done', { x: 1 })
+      // @ts-expect-error - WithProps is not a flow
+      pushModal('WithProps', 'anything')
+    }
+
+    expectTypeOf(assertions).toBeFunction()
+  })
+
   it('checks step names and their props on go()', () => {
     const Step = () => {
       const { go, replaceStep } = useFlowControls<typeof checkoutSteps>()

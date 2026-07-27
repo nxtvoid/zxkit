@@ -47,8 +47,8 @@ export function createPushModal<TModals extends ModalRegistry>({
 
   type EventHandlers = {
     change: { name: ModalKeys; open: boolean; props: Record<string, unknown> }
-    push: { key?: string; name: ModalKeys; props: Record<string, unknown> }
-    replace: { key?: string; name: ModalKeys; props: Record<string, unknown> }
+    push: { key?: string; name: ModalKeys; props: Record<string, unknown>; step?: string }
+    replace: { key?: string; name: ModalKeys; props: Record<string, unknown>; step?: string }
     pop: { key?: string; name?: ModalKeys }
     popAll: undefined
   }
@@ -61,6 +61,8 @@ export function createPushModal<TModals extends ModalRegistry>({
     closedAt?: number
     /** Bumped on replace, so the body remounts while the wrapper stays open. */
     instance: number
+    /** Flow entry step, when pushed with one instead of the registered `initial`. */
+    step?: string
   }
 
   const filterGarbage = (item: StateItem): boolean => {
@@ -79,13 +81,15 @@ export function createPushModal<TModals extends ModalRegistry>({
   const createStateItem = (
     name: ModalKeys,
     props: Record<string, unknown>,
-    key = createModalKey()
+    key = createModalKey(),
+    step?: string
   ): StateItem => ({
     key,
     name,
     props,
     open: true,
     instance: 0,
+    step,
   })
 
   const resolveAsyncModal = (key: string, value: unknown) => {
@@ -121,6 +125,33 @@ export function createPushModal<TModals extends ModalRegistry>({
     popModalByKey(key)
   }
 
+  /**
+   * A flow may be pushed with a step name before its props. Nothing else can, so a
+   * leading string is unambiguous.
+   */
+  const readArgs = (name: ModalKeys, args: unknown[]) => {
+    const entry = modals[name]
+    const isFlow = entry !== undefined && '__flow' in entry
+
+    if (isFlow && typeof args[0] === 'string') {
+      const step = args[0]
+      assertStep(name, entry, step)
+      return { step, props: (args[1] ?? {}) as Record<string, unknown> }
+    }
+
+    return { step: undefined, props: (args[0] ?? {}) as Record<string, unknown> }
+  }
+
+  const assertStep = (name: ModalKeys, entry: Modals[ModalKeys], step: string) => {
+    const steps = (entry as { steps: Record<string, unknown> }).steps
+    if (step in steps) return
+
+    throw new Error(
+      `Flow "${String(name)}" has no step "${step}". ` +
+        `Known steps, closest first: ${listNames(step, Object.keys(steps))}.`
+    )
+  }
+
   const assertRegistered = (name: ModalKeys) => {
     if (name in modals) return
 
@@ -134,10 +165,15 @@ export function createPushModal<TModals extends ModalRegistry>({
     )
   }
 
-  const replaceModalByKey = (key: string, name: ModalKeys, props: Record<string, unknown>) => {
+  const replaceModalByKey = (
+    key: string,
+    name: ModalKeys,
+    props: Record<string, unknown>,
+    step?: string
+  ) => {
     assertRegistered(name)
 
-    return emitter.emit('replace', { key, name, props })
+    return emitter.emit('replace', { key, name, props, step })
   }
 
   const ModalInstance = React.memo(function ModalInstance({ item }: { item: StateItem }) {
@@ -181,7 +217,12 @@ export function createPushModal<TModals extends ModalRegistry>({
     }
 
     const body = isFlow ? (
-      <FlowHost key={item.instance} definition={entry} initialProps={item.props} />
+      <FlowHost
+        key={item.instance}
+        definition={entry}
+        initialProps={item.props}
+        initialStep={item.step}
+      />
     ) : (
       <Suspense>
         {React.createElement(
@@ -217,12 +258,12 @@ export function createPushModal<TModals extends ModalRegistry>({
     }, [state])
 
     useEffect(() => {
-      const pushHandler: Handler<EventHandlers['push']> = ({ key, name, props }) => {
+      const pushHandler: Handler<EventHandlers['push']> = ({ key, name, props, step }) => {
         emitter.emit('change', { name, open: true, props })
-        setState((p) => [...p, createStateItem(name, props, key)].filter(filterGarbage))
+        setState((p) => [...p, createStateItem(name, props, key, step)].filter(filterGarbage))
       }
 
-      const replaceHandler: Handler<EventHandlers['replace']> = ({ key, name, props }) => {
+      const replaceHandler: Handler<EventHandlers['replace']> = ({ key, name, props, step }) => {
         setState((p) => {
           const last =
             key !== undefined
@@ -231,7 +272,7 @@ export function createPushModal<TModals extends ModalRegistry>({
 
           if (!last) {
             emitter.emit('change', { name, open: true, props })
-            return [...p, createStateItem(name, props)].filter(filterGarbage)
+            return [...p, createStateItem(name, props, undefined, step)].filter(filterGarbage)
           }
 
           emitter.emit('change', { name: last.name, open: false, props: last.props })
@@ -247,6 +288,7 @@ export function createPushModal<TModals extends ModalRegistry>({
                   open: true,
                   closedAt: undefined,
                   instance: item.instance + 1,
+                  step,
                 }
               : item
           )
@@ -318,19 +360,18 @@ export function createPushModal<TModals extends ModalRegistry>({
     close: () => closeModalByKey(key),
     replace: (...invocation) => {
       const [name, ...args] = invocation
-      const [props] = args
-      replaceModalByKey(key, name, props ?? {})
+      const { step, props } = readArgs(name, args)
+      replaceModalByKey(key, name, props, step)
       return createModalHandle(key)
     },
   })
 
   const pushModal = <T extends ModalKeys>(...invocation: ModalInvocationFor<T>) => {
     const [name, ...args] = invocation
-    const [props] = args
     const key = createModalKey()
 
     assertRegistered(name)
-    emitter.emit('push', { key, name, props: props ?? {} })
+    emitter.emit('push', { key, name, ...readArgs(name, args) })
 
     return createModalHandle(key)
   }
@@ -339,10 +380,9 @@ export function createPushModal<TModals extends ModalRegistry>({
 
   const replaceWithModal = <T extends ModalKeys>(...invocation: ModalInvocationFor<T>) => {
     const [name, ...args] = invocation
-    const [props] = args
 
     assertRegistered(name)
-    emitter.emit('replace', { name, props: props ?? {} })
+    emitter.emit('replace', { name, ...readArgs(name, args) })
   }
 
   function pushModalAsync<T extends ModalKeys>(
@@ -350,14 +390,13 @@ export function createPushModal<TModals extends ModalRegistry>({
   ): Promise<ExtractModalResult<Modals[T]> | undefined>
   function pushModalAsync<T extends ModalKeys>(...invocation: ModalInvocationFor<T>) {
     const [name, ...args] = invocation
-    const [props] = args
     const key = createModalKey()
 
     assertRegistered(name)
 
     return new Promise<unknown | undefined>((resolve, reject) => {
       asyncResolutions.set(key, { resolve, reject })
-      emitter.emit('push', { key, name, props: props ?? {} })
+      emitter.emit('push', { key, name, ...readArgs(name, args) })
     })
   }
 

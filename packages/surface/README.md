@@ -335,6 +335,20 @@ const paid = await pushModalAsync('Checkout', { plan: 'pro' }) // boolean | unde
 
 Because the panel never unmounts, focus, scroll position and the panel's size transition survive the step change too.
 
+### Opening a flow at a specific step
+
+`initial` is where the flow opens by default. Pass a step name before the props to enter somewhere else — useful when the same flow is reachable from several places:
+
+```tsx
+pushModal('AppMenu') // the registered initial
+pushModal('AppMenu', 'bookmarks') // opens on that step
+pushModal('Checkout', 'payment', { amount: 24 })
+```
+
+The step name is positional, so it can never collide with a prop name, and the props that follow are checked against that step rather than the initial one. `replaceWithModal` and a handle's `replace` take the same form.
+
+The step a flow is opened at becomes the bottom of its stack: `canGoBack` is `false` there and `reset()` returns to it, not to the registered `initial`.
+
 `Wrapper` is optional and falls back to `defaultWrapper`, the same as a `modal()` entry. `Content` is required — there is no `defaultContent`, because the panel is what each flow shapes for itself.
 
 Replacing a flow — with another flow or with itself under new props — restarts it at `initial`. Only stepping keeps the shell.

@@ -198,6 +198,86 @@ describe('flow', () => {
     expect(screen.queryByText('payment: 42')).not.toBeNull()
   })
 
+  it('opens at the step given to pushModal instead of the registered initial', () => {
+    const { ModalProvider, pushModal } = setup()
+    render(<ModalProvider />)
+
+    act(() => {
+      pushModal('Checkout', 'payment', { amount: 7 })
+    })
+
+    expect(screen.queryByText('payment: 7')).not.toBeNull()
+    expect(screen.getByTestId('step').textContent).toBe('payment')
+  })
+
+  it('treats the step it was opened at as the bottom of the stack', () => {
+    const { ModalProvider, pushModal } = setup()
+    render(<ModalProvider />)
+
+    act(() => {
+      pushModal('Checkout', 'payment', { amount: 7 })
+    })
+
+    expect(screen.getByTestId('can-go-back').textContent).toBe('false')
+
+    fireEvent.click(screen.getByRole('button', { name: 'back' }))
+    expect(screen.queryByText('payment: 7')).not.toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'to done' }))
+    fireEvent.click(screen.getByRole('button', { name: 'restart' }))
+
+    // reset() returns to where it was opened, not to the registered 'cart'.
+    expect(screen.queryByText('payment: 7')).not.toBeNull()
+    expect(screen.queryByText('cart: one item')).toBeNull()
+  })
+
+  it('opens a step that takes no props', () => {
+    const { ModalProvider, pushModal } = setup()
+    render(<ModalProvider />)
+
+    act(() => {
+      pushModal('Checkout', 'done')
+    })
+
+    expect(screen.queryByText('done')).not.toBeNull()
+  })
+
+  it('still uses the registered initial when no step is given', () => {
+    const { ModalProvider, pushModal } = setup()
+    render(<ModalProvider />)
+
+    act(() => {
+      pushModal('Checkout', { label: 'one item' })
+    })
+
+    expect(screen.queryByText('cart: one item')).not.toBeNull()
+  })
+
+  it('replaces into a specific step too', () => {
+    const { ModalProvider, pushModal, replaceWithModal } = setup()
+    render(<ModalProvider />)
+
+    act(() => {
+      pushModal('Checkout', { label: 'one item' })
+    })
+    act(() => {
+      replaceWithModal('Checkout', 'payment', { amount: 3 })
+    })
+
+    expect(screen.queryByText('payment: 3')).not.toBeNull()
+  })
+
+  it('names the flow and its steps when the step does not exist', () => {
+    const { ModalProvider, pushModal } = setup()
+    render(<ModalProvider />)
+
+    const push = pushModal as unknown as (name: string, step: string) => void
+
+    expect(() => push('Checkout', 'paymnt')).toThrow(
+      /Flow "Checkout" has no step "paymnt"\. Known steps, closest first: payment, cart, done\./
+    )
+  })
+
   it('reset() returns to the initial step with its original props', () => {
     const { ModalProvider, pushModal } = setup()
     render(<ModalProvider />)
