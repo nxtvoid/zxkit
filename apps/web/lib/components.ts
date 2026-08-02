@@ -1,3 +1,8 @@
+import authzPkg from '../../../packages/authz/package.json'
+import chronoPkg from '../../../packages/chrono/package.json'
+import qrixPkg from '../../../packages/qrix/package.json'
+import surfacePkg from '../../../packages/surface/package.json'
+
 type ComponentOption = {
   title: string
   description: string
@@ -12,52 +17,52 @@ type ComponentOption = {
 
 const COMPONENTS_OPTIONS: ComponentOption[] = [
   {
-    title: '@zxkit/qrix',
+    title: qrixPkg.name,
     description:
       'Generate QR codes with ease using qrix. A powerful component to generate and visualize QR codes seamlessly into your React interface.',
-    version: '1.0.2',
+    version: qrixPkg.version,
     image: {
       light: '/qrix-light.webp',
       dark: '/qrix-dark.webp',
     },
     link: '/qrix',
-    command: 'bun i @zxkit/qrix',
+    command: `bun i ${qrixPkg.name}`,
   },
   {
-    title: '@zxkit/surface',
+    title: surfacePkg.name,
     description:
       'Handle your dialog, sheet and drawer with ease. A unified and accessible overlay API designed for flexibility, built on top of modern React primitives.',
-    version: '1.1.1',
+    version: surfacePkg.version,
     image: {
       light: '/surface-light.webp',
       dark: '/surface-dark.webp',
     },
     link: '/surface',
-    command: 'bun i @zxkit/surface',
+    command: `bun i ${surfacePkg.name}`,
   },
   {
-    title: '@zxkit/authz',
+    title: authzPkg.name,
     description:
       'Typed authorization helpers for roles, permissions, and guards. Easily manage and secure your React and Next.js applications with confidence.',
-    version: '3.1.0',
+    version: authzPkg.version,
     image: {
       light: '/authz-light.webp',
       dark: '/authz-dark.webp',
     },
     link: '/authz',
-    command: 'bun i @zxkit/authz',
+    command: `bun i ${authzPkg.name}`,
   },
   {
-    title: '@zxkit/chrono',
+    title: chronoPkg.name,
     description:
       'Zero-dependency calendar dates and timezone-aware instants. Branded PlainDate, DATE column semantics, and DST-safe zone helpers behind a total API that never throws.',
-    version: '1.1.0',
+    version: chronoPkg.version,
     image: {
       light: '/chrono-light.webp',
       dark: '/chrono-dark.webp',
     },
     link: '/chrono',
-    command: 'bun i @zxkit/chrono',
+    command: `bun i ${chronoPkg.name}`,
   },
 ]
 
