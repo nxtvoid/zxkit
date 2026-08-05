@@ -17,7 +17,15 @@
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "bun@1.3.3",
+  "//overrides": "One React across the workspace. Without this, a package adding react as a devDependency creates a second peer-resolution bucket and duplicates react-hook-form between @zxkit/ui and @zxkit/surface, whose types then stop matching in apps/web. Next is here for the same reason: @zxkit/authz takes it as a range and apps/web pins it exactly, which resolves to two copies. The @types entries belong here rather than in apps/web, because an override declared in a workspace child is exactly what creates that second bucket.",
+  "overrides": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "next": "16.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "packageManager": "bun@1.3.14",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
