@@ -5,3 +5,7 @@ build/**
 .turbo/**
 .vscode/**
 .DS_Store
+
+# Vendored skills — keep upstream formatting byte-for-byte
+.agents/skills/**
+.claude/skills/**
