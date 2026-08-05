@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@zxkit/ui', '@zxkit/qrix', '@zxkit/surface'],
+  transpilePackages: ['@zxkit/ui', '@zxkit/qrix', '@zxkit/surface', '@zxkit/noti'],
   reactCompiler: true,
 }
 

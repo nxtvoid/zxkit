@@ -1,3 +1,4 @@
+import notiPkg from '../../../packages/noti/package.json'
 import authzPkg from '../../../packages/authz/package.json'
 import chronoPkg from '../../../packages/chrono/package.json'
 import qrixPkg from '../../../packages/qrix/package.json'
@@ -16,6 +17,18 @@ type ComponentOption = {
 }
 
 const COMPONENTS_OPTIONS: ComponentOption[] = [
+  {
+    title: notiPkg.name,
+    description:
+      'A notification system for React and Next.js applications. Easily display and manage notifications with customizable styles and behaviors.',
+    version: notiPkg.version,
+    image: {
+      light: '/noti-light.webp',
+      dark: '/noti-dark.webp',
+    },
+    link: '/noti',
+    command: `bun i ${notiPkg.name}`,
+  },
   {
     title: qrixPkg.name,
     description:
