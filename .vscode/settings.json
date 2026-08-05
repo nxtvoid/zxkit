@@ -22,8 +22,5 @@
   },
   "explorer.excludeGitIgnore": false,
   "errorLens.enabledDiagnosticLevels": ["error", "warning", "info"],
-  "files.exclude": {
-    "**/node_modules": true,
-    "**/.next": true
-  }
+  
 }
