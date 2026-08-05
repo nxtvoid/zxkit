@@ -1,0 +1,139 @@
+/**
+ * Design tokens for @zxkit/noti.
+ *
+ * Override them anywhere the cascade reaches: `:root`, a theme class, or the
+ * outlet — no internal selector needed.
+ */
+
+/**
+ * Shape, type and motion, on the document alone.
+ *
+ * The outlet carries `data-noti-theme` itself, so repeating these in the theme
+ * block below would re-declare them *on* the outlet and outrank the `:root`
+ * override the docs invite — the element would inherit nothing.
+ */
+:root {
+  --noti-width: 350px;
+  --noti-compact-height: 40px;
+
+  --noti-font-size-title: 0.825rem;
+  --noti-font-size-description: 0.875rem;
+  --noti-line-height: 1.25rem;
+  --noti-icon-size: 24px;
+  --noti-glyph-size: 16px;
+
+  /**
+   * 600ms, ~4% overshoot, expressed once so the silhouette and the layers above
+   * it stay in lockstep. A Motion spring (bounce 0.25) sampled as an easing.
+   */
+  --noti-spring: linear(
+    0,
+    0.002 0.6%,
+    0.007 1.2%,
+    0.015 1.8%,
+    0.026 2.4%,
+    0.041 3.1%,
+    0.06 3.8%,
+    0.108 5.3%,
+    0.157 6.6%,
+    0.214 8%,
+    0.467 13.7%,
+    0.577 16.3%,
+    0.631 17.7%,
+    0.682 19.1%,
+    0.73 20.5%,
+    0.771 21.8%,
+    0.808 23.1%,
+    0.844 24.5%,
+    0.874 25.8%,
+    0.903 27.2%,
+    0.928 28.6%,
+    0.952 30.1%,
+    0.972 31.6%,
+    0.988 33.1%,
+    1.01 35.7%,
+    1.025 38.5%,
+    1.034 41.6%,
+    1.038 45%,
+    1.035 50.1%,
+    1.012 64.2%,
+    1.003 73%,
+    0.999 83.7%,
+    1
+  );
+
+  /* Critically damped, where an overshoot would push a value below zero. */
+  --noti-settle: linear(
+    0,
+    0.078 5%,
+    0.235 10%,
+    0.401 15%,
+    0.549 20%,
+    0.669 25%,
+    0.762 30%,
+    0.831 35%,
+    0.882 40%,
+    0.918 45%,
+    0.944 50%,
+    0.962 55%,
+    0.974 60%,
+    0.982 65%,
+    0.988 70%,
+    0.992 75%,
+    0.995 80%,
+    0.996 85%,
+    0.998 90%,
+    0.998 95%,
+    1
+  );
+
+  --noti-spring-duration: 600ms;
+  --noti-fade-duration: 360ms;
+  --noti-fade-delay: 180ms;
+}
+
+/**
+ * Colour, which is the only thing the theme actually changes.
+ *
+ * Both blocks are complete: the outlet always writes `data-noti-theme`, so the
+ * dark one cannot inherit half a palette from a light `:root` and end up with
+ * near-black text on a near-black island.
+ *
+ * `--noti-shadow` is a filter chain, never `none`: it is appended to the goo
+ * filter the canvas sets inline, and one invalid entry drops the whole list —
+ * with it the silhouette. Both offsets stay at zero because a top-anchored
+ * island is drawn flipped, which would send a downward shadow upwards.
+ */
+:root,
+[data-noti-theme='light'] {
+  /* The surface is painted by the SVG canvas; the rest sits on top of it. */
+  --noti-surface: #ffffff;
+  --noti-shadow: drop-shadow(0 0 1px oklch(0 0 0 / 0.16)) drop-shadow(0 0 14px oklch(0 0 0 / 0.12));
+
+  --noti-fg: #18181b;
+  --noti-muted: #71717a;
+  --noti-neutral: oklch(0.44 0 0);
+
+  /* Darker than the dark theme's: these are read as text on a white island. */
+  --noti-success: oklch(0.52 0.15 142.5);
+  --noti-error: oklch(0.52 0.2 25.331);
+  --noti-warning: oklch(0.55 0.13 75);
+  --noti-info: oklch(0.52 0.13 237.323);
+  --noti-action: oklch(0.52 0.19 259.815);
+}
+
+[data-noti-theme='dark'] {
+  --noti-surface: #1a1a1a;
+  /* A dark island needs no lift, and `none` would invalidate the chain. */
+  --noti-shadow: drop-shadow(0 0 0 transparent);
+
+  --noti-fg: #f5f5f5;
+  --noti-muted: #a7a7aa;
+  --noti-neutral: oklch(0.68 0 0);
+
+  --noti-success: oklch(0.78 0.19 142);
+  --noti-error: oklch(0.72 0.21 25);
+  --noti-warning: oklch(0.85 0.17 86);
+  --noti-info: oklch(0.75 0.15 237);
+  --noti-action: oklch(0.72 0.19 260);
+}

@@ -1,0 +1,471 @@
+@import './tokens.css';
+
+/**
+ * Appearance for @zxkit/noti.
+ *
+ * The component measures every geometric value and publishes it as a custom
+ * property; this file turns those numbers into one 600ms spring.
+ *
+ * Skipped on an outlet marked `unstyled`. Logical properties throughout, so
+ * `dir='rtl'` mirrors without an extra rule.
+ */
+
+[data-noti-outlet] {
+  font-family: inherit;
+  color: var(--noti-fg);
+}
+
+/* Own box model, not the host page's: without this the header is 40px in an
+   app with a reset and 56px in one without. */
+[data-noti-outlet],
+[data-noti-outlet] *,
+[data-noti-outlet] *::before,
+[data-noti-outlet] *::after {
+  box-sizing: border-box;
+}
+
+/* --- Root ---------------------------------------------------------------- */
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item] {
+  --noti-accent: var(--noti-neutral);
+
+  position: relative;
+  box-sizing: border-box;
+  /* The outlet already resolves the token against the viewport. Reading
+     `--noti-width` again here would skip that clamp and overflow a narrow
+     screen by whatever the token asked for. */
+  inline-size: 100%;
+  /* The one animated size: faking it with a transform would stretch the text. */
+  block-size: var(--noti-island-height, var(--noti-compact-height));
+  border: 0;
+  background: transparent;
+  color: var(--noti-fg);
+  transform-origin: center;
+  contain: layout style;
+  overflow: visible;
+  cursor: default;
+  /* Long words and URLs fold rather than widen the island. */
+  overflow-wrap: anywhere;
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item][data-noti-ready] {
+  transition: block-size var(--noti-spring-duration) var(--noti-spring);
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item][data-noti-state='success'] {
+  --noti-accent: var(--noti-success);
+}
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item][data-noti-state='error'] {
+  --noti-accent: var(--noti-error);
+}
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item][data-noti-state='warning'] {
+  --noti-accent: var(--noti-warning);
+}
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item][data-noti-state='info'] {
+  --noti-accent: var(--noti-info);
+}
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item][data-noti-state='action'] {
+  --noti-accent: var(--noti-action);
+}
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item][data-noti-state='loading'] {
+  --noti-accent: var(--noti-neutral);
+}
+
+/* The only thing telling a keyboard user where they are. */
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item]:focus-visible {
+  outline: 2px solid var(--noti-accent);
+  outline-offset: 3px;
+}
+
+/* --- Silhouette ---------------------------------------------------------- */
+
+[data-noti-island-canvas] {
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  transform: translateZ(0);
+  contain: layout style;
+  overflow: visible;
+}
+
+[data-noti-island-canvas][data-noti-edge='bottom'] {
+  top: 0;
+}
+
+/* Anchored at the bottom, the island grows up: the same geometry, flipped. */
+[data-noti-island-canvas][data-noti-edge='top'] {
+  bottom: 0;
+  transform: scaleY(-1) translateZ(0);
+}
+
+[data-noti-island-svg] {
+  overflow: visible;
+}
+
+[data-noti-island-pill] {
+  x: var(--noti-pill-x);
+  width: var(--noti-pill-width);
+  height: var(--noti-pill-height);
+}
+
+[data-noti-island-body] {
+  height: var(--noti-body-rect-height);
+}
+
+/* One object, one spring, no delay: fading the shape in behind text that has
+   already arrived makes a morph look like two things. */
+[data-noti-item][data-noti-ready] :is([data-noti-island-pill], [data-noti-island-body]) {
+  transition:
+    x var(--noti-spring-duration) var(--noti-spring),
+    width var(--noti-spring-duration) var(--noti-spring),
+    height var(--noti-spring-duration) var(--noti-spring),
+    opacity var(--noti-spring-duration) var(--noti-spring);
+}
+
+/* Closing does not rebound: an overshoot would drive the height below zero. */
+[data-noti-item][data-noti-ready]:not([data-noti-expanded]) [data-noti-island-body] {
+  transition-timing-function: var(--noti-settle);
+}
+
+/* --- Live region --------------------------------------------------------- */
+
+/* A positioning wrapper, so heading and description share one announcement. */
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-content] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* --- Heading ------------------------------------------------------------- */
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-header] {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  block-size: var(--noti-compact-height);
+  padding: 8px;
+  left: 0;
+  /* Not a transform: this is a clip, and it is what the fade below reads as
+     "there is more". Animating it costs layout, but only inside this absolutely
+     positioned box — and no transform expresses it. */
+  max-width: var(--noti-pill-width);
+  /* Carries the pill's `x` as well as the lift, so the header moves on the
+     compositor instead of through `left`. */
+  transform: var(--noti-heading-transform);
+  overflow: hidden;
+}
+
+[data-noti-header][data-noti-edge='bottom'] {
+  top: 0;
+}
+
+[data-noti-header][data-noti-edge='top'] {
+  bottom: 0;
+}
+
+/* The pill stops growing at the island's width, so a longer title has to end
+   somewhere. It cannot be an ellipsis: the heading's natural width is what the
+   pill is measured from, and constraining it would feed back into that
+   measurement. Fading the clipped edge says "there is more" without lying
+   about how wide the heading is. */
+[data-noti-item][data-noti-truncated] [data-noti-header] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+[data-noti-outlet][dir='rtl'] [data-noti-item][data-noti-truncated] [data-noti-header] {
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+
+[data-noti-item][data-noti-ready] [data-noti-header] {
+  transition:
+    transform var(--noti-spring-duration) var(--noti-spring),
+    max-width var(--noti-spring-duration) var(--noti-spring);
+}
+
+[data-noti-heading-stack] {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  block-size: 100%;
+}
+
+[data-noti-heading-layer] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  transform: translateZ(0);
+}
+
+[data-noti-heading-layer='current'] {
+  position: relative;
+  z-index: 1;
+}
+
+/* Stacked underneath, defocusing as it leaves. */
+[data-noti-heading-layer='previous'] {
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-title] {
+  color: var(--noti-accent);
+  font-size: var(--noti-font-size-title);
+  line-height: 1rem;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-icon] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  inline-size: var(--noti-icon-size);
+  block-size: var(--noti-icon-size);
+  padding: 2px;
+  border-radius: 9999px;
+  background: color-mix(in oklch, var(--noti-accent) 20%, transparent);
+  color: var(--noti-accent);
+}
+
+/* A mark inside the badge, not the shape holding it. */
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-icon] > * {
+  inline-size: var(--noti-glyph-size);
+  block-size: var(--noti-glyph-size);
+}
+
+/* The one endless animation, and the case that earns it. */
+[data-noti-state-icon-spin] {
+  transform-origin: center;
+  animation: noti-spin 1s linear infinite;
+}
+
+@keyframes noti-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* --- Body ---------------------------------------------------------------- */
+
+/* Out of flow and measured while invisible: the island has to know the size it
+   is growing into. Opacity only, so the description stays in the a11y tree and
+   the announcement is complete before it ever opens. */
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-body] {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  top: var(--noti-body-offset, 0px);
+  inline-size: 100%;
+  opacity: var(--noti-content-opacity, 0);
+  pointer-events: none;
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-body][data-noti-visible] {
+  pointer-events: auto;
+}
+
+/* Leaving is not the reverse of arriving. The delay exists so content appears
+   after the card has opened; on the way out the same delay would leave it
+   hanging over a silhouette that already collapsed — a close button still
+   floating where the card's corner used to be. */
+[data-noti-item][data-noti-ready] :is([data-noti-body], [data-noti-actions], [data-noti-close]) {
+  transition: opacity calc(var(--noti-spring-duration) * 0.08) ease
+    calc(var(--noti-spring-duration) * 0.04);
+}
+
+[data-noti-item][data-noti-ready] [data-noti-body][data-noti-visible] {
+  transition: opacity var(--noti-fade-duration) ease var(--noti-fade-delay);
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-description] {
+  padding: 16px;
+  box-sizing: border-box;
+  inline-size: 100%;
+  color: var(--noti-muted);
+  font-size: var(--noti-font-size-description);
+  line-height: var(--noti-line-height);
+  text-align: start;
+}
+
+/* --- Actions ------------------------------------------------------------- */
+
+/* Opacity, not `visibility`: a control the keyboard can only reach once the
+   island is open is a control the keyboard cannot find. It stays in the tab
+   order and in the accessibility tree, and focusing it reveals it. */
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-actions] {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  top: var(--noti-actions-offset, 0px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  inline-size: 100%;
+  padding: 12px 16px 16px;
+  opacity: var(--noti-content-opacity, 0);
+  pointer-events: none;
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-actions][data-noti-visible] {
+  pointer-events: auto;
+}
+
+[data-noti-item][data-noti-ready] [data-noti-actions][data-noti-visible] {
+  transition: opacity var(--noti-fade-duration) ease var(--noti-fade-delay);
+}
+
+/* Strips the user agent, nothing more. `[data-noti-button]` below has to
+   outrank it, or the island's own control renders as bare inherited text —
+   which is what a bare type selector in here used to cause. */
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-actions] button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-actions] [data-noti-button] {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  block-size: 30px;
+  padding: 0 12px;
+  /* A rounded rectangle, not a capsule: the button spans the card, and a
+     full pill at this width reads as a track rather than a control. */
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--noti-accent) 15%, transparent);
+  color: var(--noti-accent);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: background-color 150ms ease;
+}
+
+/* Only where a pointer can actually leave again. On touch a tap latches
+   `:hover` and the control stays lit with nobody hovering it. */
+@media (hover: hover) and (pointer: fine) {
+  [data-noti-outlet]:not([data-noti-unstyled]) [data-noti-actions] [data-noti-button]:hover {
+    background: color-mix(in oklch, var(--noti-accent) 25%, transparent);
+  }
+}
+
+/* No row of its own: it floats in the card's corner. */
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-close] {
+  position: absolute;
+  z-index: 4;
+  top: var(--noti-close-top, 8px);
+  inset-inline-end: var(--noti-close-inset, 8px);
+  display: grid;
+  place-items: center;
+  appearance: none;
+  inline-size: 22px;
+  block-size: 22px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--noti-muted);
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  opacity: var(--noti-content-opacity, 0);
+  pointer-events: none;
+  cursor: pointer;
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-close][data-noti-visible] {
+  pointer-events: auto;
+}
+
+/* Focus arrives before the island finishes opening behind it, so the control
+   shows itself rather than waiting for the morph to catch up. */
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-actions]:has(:focus-visible),
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-close]:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Reachable without opening anything: an island whose only extra is this
+   control no longer grows a card to hold it. */
+@media (hover: hover) and (pointer: fine) {
+  [data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item]:hover [data-noti-close] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+[data-noti-item][data-noti-ready] [data-noti-close][data-noti-visible] {
+  transition: opacity var(--noti-fade-duration) ease var(--noti-fade-delay);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-noti-outlet]:not([data-noti-unstyled]) [data-noti-close]:hover {
+    color: var(--noti-fg);
+  }
+}
+
+[data-noti-outlet]:not([data-noti-unstyled])
+  :is([data-noti-button], [data-noti-close]):focus-visible {
+  outline: 2px solid currentcolor;
+  outline-offset: 2px;
+}
+
+/* Room for the close control. */
+[data-noti-outlet]:not([data-noti-unstyled])
+  [data-noti-item]:has([data-noti-close])
+  [data-noti-description] {
+  padding-inline-end: 44px;
+}
+
+/* --- Preferences --------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-noti-state-icon-spin] {
+    animation: none;
+  }
+
+  /* Nothing travels, resizes or blurs: the state arrives instead of moving.
+     The delays go with the durations — waiting 180ms for a description to
+     appear is still motion design to someone who asked for none. */
+  [data-noti-outlet],
+  [data-noti-outlet] *,
+  [data-noti-outlet] *::before,
+  [data-noti-outlet] *::after {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (forced-colors: active) {
+  /* Colour is stripped here, including the SVG surface, which is not painted. */
+  [data-noti-outlet]:not([data-noti-unstyled]) [data-noti-item] {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  [data-noti-outlet]:not([data-noti-unstyled]) [data-noti-icon] {
+    background: CanvasText;
+    color: Canvas;
+    forced-color-adjust: none;
+  }
+
+  [data-noti-outlet]:not([data-noti-unstyled]) [data-noti-title],
+  [data-noti-outlet]:not([data-noti-unstyled]) [data-noti-description] {
+    color: CanvasText;
+  }
+}

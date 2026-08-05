@@ -1,0 +1,80 @@
+{
+  "name": "@zxkit/noti",
+  "version": "1.0.0",
+  "description": "One notification, one island: a React singleton with an object-only API, physical pill-to-card motion and no animation dependency",
+  "author": "nxtvoid",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nxtvoid/zxkit",
+    "directory": "packages/noti"
+  },
+  "keywords": [
+    "notification",
+    "island",
+    "dynamic-island",
+    "react",
+    "nextjs",
+    "accessible",
+    "headless"
+  ],
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./styles.css": "./dist/styles/noti.css",
+    "./tokens.css": "./dist/styles/tokens.css"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "scripts": {
+    "dev": "tsdown --watch",
+    "build": "bun scripts/generate-css.ts && tsdown",
+    "clean": "rm -rf dist",
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "format": "prettier --write \"**/*.{js,ts,tsx,md,json,mjs,css}\"",
+    "format:check": "prettier --check \"**/*.{js,ts,tsx,md,json,mjs,css}\"",
+    "generate:css": "bun scripts/generate-css.ts"
+  },
+  "bugs": {
+    "url": "https://github.com/nxtvoid/zxkit/issues"
+  },
+  "homepage": "https://github.com/nxtvoid/zxkit/tree/main/packages/noti#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^25.3.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@workspace/eslint-config": "*",
+    "@workspace/typescript-config": "*",
+    "axe-core": "^4.11.0",
+    "eslint": "^9.32.0",
+    "jsdom": "^26.1.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tsdown": "0.21.10",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
