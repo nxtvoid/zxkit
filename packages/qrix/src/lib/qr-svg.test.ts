@@ -276,6 +276,10 @@ describe('generateQRCodeSVG', () => {
       )
     )
 
+    // Each case rasterizes a 400px SVG and decodes it back, which is the most
+    // expensive thing this suite does. Alone it takes a fraction of the default
+    // 5s; sharing a machine with the other packages' suites it does not, and a
+    // timeout there says nothing about the code under test.
     it.each(combinations)(
       'decodes dotStyle=$dotStyle markerCenter=$markerCenterStyle markerBorder=$markerBorderStyle',
       async (styles) => {
@@ -283,7 +287,8 @@ describe('generateQRCodeSVG', () => {
         const svg = generateQRCodeSVG({ value, size: 400, ...styles })
 
         expect(await renderAndDecode(svg)).toBe(value)
-      }
+      },
+      30_000
     )
   })
 
