@@ -30,14 +30,37 @@ const publishablePackageDirs = readdirSync('packages', { withFileTypes: true })
   })
   .map((packageDir) => packageDir.replaceAll('\\', '/'))
 
+/**
+ * Files that live inside a package but never reach the published tarball, and
+ * that no build reads on the way there.
+ *
+ * Deliberately short. Asking for a changeset that was not needed costs a
+ * comment on a pull request; skipping one that was needed publishes a change
+ * nobody versioned, so anything uncertain stays out of this list. `src/**` is
+ * absent on purpose: it feeds `dist`. So are `README.md` and `package.json`,
+ * which ship inside the tarball itself.
+ */
+const RELEASE_IRRELEVANT = [
+  /\.test\.[cm]?[jt]sx?$/,
+  /\.spec\.[cm]?[jt]sx?$/,
+  /(^|\/)__tests__\//,
+  /(^|\/)__mocks__\//,
+  /(^|\/)eslint\.config\.[cm]?js$/,
+  /(^|\/)vitest\.config\.[cm]?[jt]s$/,
+  /(^|\/)\.prettierignore$/,
+]
+
+const isReleaseRelevant = (file) => !RELEASE_IRRELEVANT.some((pattern) => pattern.test(file))
+
+const normalizedFiles = changedFiles.map((file) => file.replaceAll('\\', '/'))
+const relevantFiles = normalizedFiles.filter(isReleaseRelevant)
+
 const changedPublishablePackages = new Set(
-  changedFiles
-    .map((file) => file.replaceAll('\\', '/'))
-    .flatMap((file) =>
-      publishablePackageDirs.filter(
-        (packageDir) => file === packageDir || file.startsWith(`${packageDir}/`)
-      )
+  relevantFiles.flatMap((file) =>
+    publishablePackageDirs.filter(
+      (packageDir) => file === packageDir || file.startsWith(`${packageDir}/`)
     )
+  )
 )
 
 const needsChangeset = changedPublishablePackages.size > 0
@@ -45,6 +68,12 @@ const output = process.env.GITHUB_OUTPUT
 
 if (output) {
   appendFileSync(output, `needs_changeset=${needsChangeset}\n`)
+}
+
+const skipped = normalizedFiles.filter((file) => !isReleaseRelevant(file))
+
+if (skipped.length > 0) {
+  console.log(`Ignored as release-irrelevant:\n  ${skipped.join('\n  ')}`)
 }
 
 if (needsChangeset) {
