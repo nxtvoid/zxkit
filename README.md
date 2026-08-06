@@ -6,6 +6,7 @@ A collection of React components, utilities, and tooling for building modern web
 
 | Package                                | Description                                                      |
 | -------------------------------------- | ---------------------------------------------------------------- |
+| [`@zxkit/noti`](./packages/noti)       | One notification, one island: a React notification singleton     |
 | [`@zxkit/authz`](./packages/authz)     | Storage-agnostic roles, permissions, guards, and Next.js helpers |
 | [`@zxkit/chrono`](./packages/chrono)   | Zero-dependency calendar dates and timezone-aware instants       |
 | [`@zxkit/qrix`](./packages/qrix)       | QR code generator for React                                      |
