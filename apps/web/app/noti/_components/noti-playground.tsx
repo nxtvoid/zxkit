@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { noti, type NotiPosition } from '@zxkit/noti'
 import { Button } from '@zxkit/ui/button'
 import Image from 'next/image'
+import { Trash } from 'lucide-react'
 
 const POSITIONS: NotiPosition[] = [
   'bottom-right',
@@ -17,6 +18,64 @@ const POSITIONS: NotiPosition[] = [
 export function NotiPlayground() {
   const [position, setPosition] = useState<NotiPosition>('bottom-right')
   const slowResult = useRef(0)
+  const [confirmationResult, setConfirmationResult] = useState('No decision yet.')
+
+  // confirm "action" with fake delay
+  const onConfirmAction = async () => {
+    return new Promise<void>((resolve, reject) => {
+      setTimeout(() => {
+        if (Math.random() > 0.35) resolve()
+        else reject(new Error('Network unreachable'))
+      }, 1_500)
+    })
+  }
+
+  function runNotificationConfirm() {
+    let decided = false
+    setConfirmationResult('Waiting for the notification action.')
+    noti.action({
+      title: 'Delete product?',
+      description: 'Delete Desk? Choose Cancel to keep it. This demo deletes no data.',
+      duration: null,
+      keepExpanded: true,
+      dismissible: false,
+      position: 'top-center',
+      icon: <Trash />,
+      cancelButton: {
+        title: 'Cancel',
+        onClick: () => {
+          decided = true
+          setConfirmationResult('Cancelled. Product kept.')
+        },
+        dismissOnSuccess: true,
+      },
+      button: {
+        title: 'Delete product',
+        onClick: () => {
+          // In an app, perform the deletion only from this explicit action.
+          decided = true
+          setConfirmationResult('Confirmed through a notification. No data was deleted.')
+
+          noti.promise(onConfirmAction, {
+            loading: { title: 'Deleting product…' },
+            success: {
+              title: 'Deletion confirmed',
+              description: 'Demo only — Desk was not deleted.',
+              duration: 7_000,
+            },
+            error: {
+              title: 'Could not delete',
+              description: 'Demo only — Desk was not deleted.',
+              duration: 7_000,
+            },
+          })
+        },
+      },
+      onDismiss: () => {
+        if (!decided) setConfirmationResult('Notification dismissed. Product kept.')
+      },
+    })
+  }
 
   function runPromise() {
     void noti
@@ -73,6 +132,7 @@ export function NotiPlayground() {
   }
 
   const actions = [
+    { label: 'Confirm via notification', run: runNotificationConfirm },
     {
       label: 'Success',
       run: () =>
@@ -165,7 +225,7 @@ export function NotiPlayground() {
       run: () =>
         noti.info({
           title: 'Synchronising every single record in this workspace right now',
-          description: 'The pill stops at the island width, so the heading fades out.',
+          description: 'Expand the island to read the complete title.',
           duration: null,
         }),
     },
@@ -184,7 +244,18 @@ export function NotiPlayground() {
         noti.show({
           type: 'loading',
           title: 'Uploading file…',
-          description: 'Loading never expands, however much it has to say.',
+          description: 'Your upload is in progress. Details remain available while loading.',
+          duration: null,
+        }),
+    },
+    {
+      label: 'Bottom center',
+      run: () =>
+        noti.show({
+          type: 'info',
+          title: 'Bottom-center notification',
+          description: 'This notification is centered horizontally along the bottom edge.',
+          position: 'bottom-center',
           duration: null,
         }),
     },
@@ -203,6 +274,9 @@ export function NotiPlayground() {
 
   return (
     <div className='grid gap-4'>
+      <p role='status' className='text-muted-foreground text-xs'>
+        {confirmationResult}
+      </p>
       <div className='flex flex-wrap gap-2'>
         {actions.map((action) => (
           <Button key={action.label} variant='outline' size='sm' onClick={action.run}>
@@ -230,11 +304,15 @@ export function NotiPlayground() {
       </div>
 
       <p className='text-muted-foreground text-xs leading-5'>
-        Every button above replaces the same island — press them as fast as you like and there is
+        Notification buttons replace the same island — press them as fast as you like and there is
         still exactly one <span className='font-mono'>[data-noti-item]</span> on the page, on the
         same DOM node. Hover it — or tap it, where nothing can hover — to hold its countdown, tab
         into it to hold it again, and switch browser tabs to hold it a third way: three independent
         reasons on one timer.
+      </p>
+      <p className='text-muted-foreground text-xs leading-5'>
+        Confirm via notification stays expanded until you choose Cancel or Delete. It uses ordinary
+        notification actions, so another notification can still replace it.
       </p>
     </div>
   )
