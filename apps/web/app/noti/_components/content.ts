@@ -30,7 +30,7 @@ export async function saveDraft(draft: Draft) {
 export const singletonExample = `noti.success({ title: 'Changes saved' })
 noti.error({ title: 'Could not save' })   // replaces it — same node, same island
 
-// Every call returns the same logical id, because there is one notification.
+// Every call returns a unique id. A stale id cannot close a newer notification.
 const id = noti.info({ title: 'New comment' })
 noti.dismiss(id)
 
@@ -89,7 +89,7 @@ export const buttonExample = `noti.action({
 
 // The button does not close the notification. A control that dismisses what it
 // just confirmed takes the confirmation away.
-// A rejected handler is reported and the island stays up.`
+// Pending actions block repeated clicks. Failures show an error and pause expiry.`
 
 export const timerExample = `// Hover, focus and a hidden tab are three independent holds on one countdown.
 // It resumes only when the last of them is gone.

@@ -66,7 +66,7 @@ const groups: Group[] = [
         label: 'Singleton',
         title: 'one notification',
         description:
-          'A second call replaces the first instead of stacking on it. Same record id, same DOM node, so the change is a morph rather than a mount.',
+          'A second call replaces the first instead of stacking on it. Unique invocation ids, same DOM node, so the change is a morph rather than a mount.',
         code: singletonExample,
       },
       {
@@ -229,10 +229,6 @@ export function NotiView() {
               <article
                 key={section.id}
                 id={section.id}
-                // `min-w-0`: a grid item's automatic minimum is its content's,
-                // and a code block never wraps. Without it the article is as
-                // wide as the longest line and the page scrolls sideways
-                // instead of the snippet.
                 className='border-border min-w-0 scroll-mt-24 border-t pt-6'
               >
                 <p className='text-muted-foreground font-mono text-xs uppercase'>{section.label}</p>

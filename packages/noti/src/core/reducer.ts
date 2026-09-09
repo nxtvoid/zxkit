@@ -38,6 +38,7 @@ function reduceCommand(state: NotiStoreState, command: NotiCommand): NotiStoreSt
       // A timer scheduled before the dismiss can still fire after it. Opening
       // the card now would change the island's geometry while it is leaving.
       if (current.phase === 'exiting') return state
+      if (current.keepExpanded && !command.expanded) return state
       if (current.expanded === command.expanded) return state
 
       return { current: { ...current, expanded: command.expanded } }

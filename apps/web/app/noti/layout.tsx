@@ -14,6 +14,7 @@ export default function NotiLayout({ children }: { children: React.ReactNode }) 
 
       <NotiOutlet
         position='bottom-right'
+        closeButton={true}
         theme={(resolvedTheme ?? theme) as Themes}
         icons={{
           error: <CircleXIcon />,

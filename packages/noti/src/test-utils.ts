@@ -89,7 +89,8 @@ export function makeRecord(overrides: Partial<NotiRecord> = {}): NotiRecord {
   instanceCounter += 1
 
   return {
-    id: NOTI_ID,
+    id: `${NOTI_ID}-${instanceCounter}`,
+    priority: 0,
     instanceId: instanceCounter,
     state: 'success',
     phase: 'entering',

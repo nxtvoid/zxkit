@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createNotiApi, type NotiApi } from './client'
 import { createNotiStore, type NotiStore } from './core/store'
-import { DEFAULT_DURATION, NOTI_ID } from './core/constants'
+import { DEFAULT_DURATION } from './core/constants'
 import { createFakeTimerHost, flushMicrotasks, type FakeTimerHost } from './test-utils'
 
 function setup(): { noti: NotiApi; store: NotiStore; clock: FakeTimerHost } {
@@ -13,6 +13,68 @@ function setup(): { noti: NotiApi; store: NotiStore; clock: FakeTimerHost } {
 }
 
 describe('noti', () => {
+  it('updates only its live id, preserves fields and does not report a dismissal', () => {
+    const { noti, store } = setup()
+    const onDismiss = vi.fn()
+    const id = noti.loading({ title: 'Uploading', description: 'File A', onDismiss })
+    expect(noti.update(id, { title: 'Almost done' })).toBe(true)
+    expect(store.getCurrent()).toMatchObject({ id, title: 'Almost done', description: 'File A' })
+    expect(onDismiss).not.toHaveBeenCalled()
+    expect(noti.update(id, { type: 'success' })).toBe(true)
+    expect(store.getCurrent()?.duration).toBe(DEFAULT_DURATION)
+    noti.info({ title: 'Another operation' })
+    expect(noti.update(id, { title: 'Stale' })).toBe(false)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('protects a higher priority notice without queueing suppressed work', async () => {
+    const { noti, store } = setup()
+    const id = noti.error({ title: 'Unsaved work', priority: 10 })
+    const suppressed = noti.info({ title: 'Synced' })
+    noti.dismiss(suppressed)
+    await noti.promise(Promise.resolve(), {
+      loading: { title: 'Loading' },
+      success: { title: 'Done' },
+    })
+    await flushMicrotasks()
+    expect(store.getCurrent()?.id).toBe(id)
+    noti.dismiss(id)
+    noti.info({ title: 'Next' })
+    expect(store.getCurrent()?.title).toBe('Next')
+  })
+
+  it('keeps a prioritized promise outcome visible', async () => {
+    const { noti, store } = setup()
+    await noti.promise(Promise.resolve(), {
+      loading: { title: 'Loading', priority: 5 },
+      success: { title: 'Done' },
+    })
+    await flushMicrotasks()
+    expect(store.getCurrent()).toMatchObject({ title: 'Done', priority: 5 })
+    await noti.promise(Promise.resolve(), {
+      loading: { title: 'Loading again', priority: 5 },
+      success: { title: 'Complete', priority: 0 },
+    })
+    await flushMicrotasks()
+    expect(store.getCurrent()).toMatchObject({ title: 'Complete', priority: 0 })
+  })
+
+  it('merges state defaults and supports expansion without automatic collapse', () => {
+    const { noti, store } = setup()
+    store.registerOutlet(Symbol(), {
+      position: 'top-right',
+      options: { duration: 2000 },
+      stateOptions: { error: { duration: null, autopilot: { collapse: null } } },
+    })
+    noti.error({ title: 'Failed' })
+    expect(store.getCurrent()?.duration).toBe(Infinity)
+    expect(store.getCurrent()?.autopilot.collapse).toBeUndefined()
+    noti.error({ title: 'Temporary', duration: 1000 })
+    expect(store.getCurrent()?.duration).toBe(1000)
+    const id = noti.loading({ title: 'Working', priority: 10 })
+    noti.update(id, { type: 'error', title: 'Failed' })
+    expect(store.getCurrent()?.duration).toBe(Infinity)
+  })
   describe('object API', () => {
     it('creates one notification per state', () => {
       const { noti, store } = setup()
@@ -44,12 +106,14 @@ describe('noti', () => {
       expect(store.getCurrent()?.state).toBe('warning')
     })
 
-    it('returns the same id every time', () => {
-      const { noti } = setup()
-
-      expect(noti.success({ title: 'One' })).toBe(NOTI_ID)
-      expect(noti.error({ title: 'Two' })).toBe(NOTI_ID)
-      expect(noti.info({ title: 'Three' })).toBe(NOTI_ID)
+    it('gives each invocation an id that cannot dismiss its replacement', () => {
+      const { noti, store } = setup()
+      const first = noti.success({ title: 'One' })
+      const second = noti.error({ title: 'Two' })
+      expect(first).not.toBe(second)
+      noti.dismiss(first)
+      expect(store.getCurrent()?.id).toBe(second)
+      expect(store.getCurrent()?.phase).not.toBe('exiting')
     })
 
     it('never holds more than one notification', () => {

@@ -27,7 +27,7 @@ export const MIN_EXPAND_RATIO = 2.25
 export const PILL_PADDING = 10
 
 /** Room the close control needs inside the pill, so it never sits on the title. */
-export const CLOSE_SLOT = 26
+export const CLOSE_SLOT = 36
 
 /** Blur as a fraction of the radius: it becomes the neck, so it has to scale with it. */
 export const BLUR_RATIO = 0.5

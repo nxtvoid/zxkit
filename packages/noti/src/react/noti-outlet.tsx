@@ -36,6 +36,9 @@ export interface NotiOutletProps {
   offset?: NotiOffset
   /** Defaults every call inherits. A call always wins, one key at a time. */
   options?: Partial<NotiOptions>
+  /** Per-state defaults, applied after options and before each call. */
+  stateOptions?: Partial<Record<import('../types').NotiState, Partial<NotiOptions>>>
+  actionErrorLabel?: string
   theme?: NotiTheme
 
   /** Per-state glyphs. `null` drops a badge; a call's own `icon` wins over both. */
@@ -131,11 +134,13 @@ export function NotiOutletWithStore({
   position = DEFAULT_POSITION,
   offset = 24,
   options,
+  stateOptions,
+  actionErrorLabel = 'Action failed. Please try again.',
   theme = 'system',
   icons,
   injectStyles = true,
   nonce,
-  closeButton = false,
+  closeButton = true,
   closeButtonLabel = 'Close notification',
   closeButtonIcon = '×',
   dir,
@@ -163,8 +168,8 @@ export function NotiOutletWithStore({
   // The imperative API resolves options before React sees them, so the
   // outlet's defaults have to reach the store.
   useEffect(
-    () => store.registerOutlet(token, { position, options }),
-    [store, token, position, options]
+    () => store.registerOutlet(token, { position, options, stateOptions }),
+    [store, token, position, options, stateOptions]
   )
 
   // A countdown should not burn down in a hidden tab.
@@ -173,7 +178,8 @@ export function NotiOutletWithStore({
   // second outlet unmounting would otherwise release it on behalf of one that
   // is still mounted with the tab still hidden.
   useEffect(() => {
-    if (!isRenderOwner) return
+    // Registration effects may have selected another owner since this render.
+    if (!isRenderOwner || !store.isRenderOwner(token)) return
 
     const sync = () => {
       if (document.hidden) store.pause('document-hidden')
@@ -191,7 +197,7 @@ export function NotiOutletWithStore({
       // future notification forever, with nothing left to release it.
       store.resume('document-hidden')
     }
-  }, [store, isRenderOwner])
+  }, [store, isRenderOwner, token])
 
   const at = record?.position ?? position
 
@@ -228,7 +234,8 @@ export function NotiOutletWithStore({
       style={{ ...outletStyle(at, offset), ...style }}
     >
       <NotiItem
-        key={record.id}
+        key='island'
+        actionErrorLabel={actionErrorLabel}
         record={record}
         store={store}
         position={at}

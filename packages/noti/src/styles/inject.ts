@@ -14,7 +14,14 @@ const MARKER = 'data-noti-styles'
  */
 export function injectNotiStyles(nonce?: string): void {
   if (typeof document === 'undefined') return
-  if (document.querySelector(`style[${MARKER}]`) !== null) return
+  const existing = document.querySelector<HTMLStyleElement>(`style[${MARKER}]`)
+  if (existing !== null) {
+    // Fast Refresh keeps the document and this tag alive across module updates.
+    // Reuse the tag, but do not leave new markup paired with an old stylesheet.
+    if (nonce !== undefined) existing.nonce = nonce
+    if (existing.textContent !== NOTI_CSS) existing.textContent = NOTI_CSS
+    return
+  }
 
   const style = document.createElement('style')
   style.setAttribute(MARKER, '')

@@ -65,6 +65,7 @@ function resolveAutopilot(
   const timing = typeof autopilot === 'object' ? autopilot : undefined
   const limit = Number.isFinite(duration) ? duration : Number.POSITIVE_INFINITY
   const expand = Math.min(finiteAtLeast(timing?.expand, 0, DEFAULT_EXPAND_DELAY), limit)
+  if (timing?.collapse === null) return { enabled: true, expand, collapse: undefined }
   const collapse = finiteAtLeast(timing?.collapse, 0, DEFAULT_COLLAPSE_DELAY)
 
   return { enabled: true, expand, collapse: Math.min(collapse, limit) }
@@ -81,7 +82,7 @@ function mergeStyles(
   return { ...base, ...override }
 }
 
-function assertOptions(method: string, options: unknown): asserts options is NotiOptions {
+function assertOptions(method: string, options: unknown): asserts options is object {
   if (typeof options === 'object' && options !== null && !Array.isArray(options)) return
 
   throw new TypeError(
@@ -101,6 +102,7 @@ function sameContent(
     previous.title === next.title &&
     previous.description === next.description &&
     previous.button === next.button &&
+    previous.cancelButton === next.cancelButton &&
     previous.icon === next.icon &&
     previous.styles === next.styles &&
     previous.fill === next.fill &&
@@ -112,6 +114,9 @@ function sameContent(
 }
 
 export interface NotiApi {
+  /** Update the current invocation. Returns false for stale or dismissed ids. Restarts its timer. */
+  update: (id: NotiId, options: NotiOptions) => boolean
+  loading: (options: NotiOptions) => NotiId
   /** Shows a notification. Without `type` it reads as a success. */
   show: (options: NotiOptions) => NotiId
   success: (options: NotiOptions) => NotiId
@@ -134,14 +139,22 @@ export interface NotiApi {
 export function createNotiApi(store: NotiStore): NotiApi {
   function build(state: NotiState, options: NotiOptions): NotiRecord {
     const previous = store.getCurrent()
-    const defaults = store.getDefaults().options
-    const merged: NotiOptions = defaults === undefined ? options : { ...defaults, ...options }
+    const outletDefaults = store.getDefaults()
+    const stateDefaults = outletDefaults.stateOptions?.[state]
+    const defaults = {
+      ...outletDefaults.options,
+      ...stateDefaults,
+      styles: mergeStyles(outletDefaults.options?.styles, stateDefaults?.styles),
+    }
+    const merged: NotiOptions = { ...defaults, ...options }
     const duration = normalizeDuration(state, merged.duration)
     const timestamp = monotonicNow()
+    const instanceId = nextInstanceId()
 
     const draft: Omit<NotiRecord, 'version'> = {
-      id: NOTI_ID,
-      instanceId: nextInstanceId(),
+      id: `${NOTI_ID}-${instanceId}`,
+      instanceId,
+      priority: Number.isFinite(merged.priority) ? (merged.priority ?? 0) : 0,
       state,
       // A live replacement keeps its phase, so the island morphs in place
       // instead of replaying its entrance. One that is leaving comes back.
@@ -157,6 +170,8 @@ export function createNotiApi(store: NotiStore): NotiApi {
       roundness: finiteAtLeast(merged.roundness, 0, DEFAULT_ROUNDNESS),
       autopilot: resolveAutopilot(merged.autopilot, duration),
       button: merged.button,
+      cancelButton: merged.cancelButton,
+      keepExpanded: merged.keepExpanded ?? false,
       dismissible: merged.dismissible ?? true,
       important: merged.important ?? false,
       expanded: false,
@@ -174,11 +189,28 @@ export function createNotiApi(store: NotiStore): NotiApi {
     return { ...draft, version: sameContent(previous, draft) ? shown : shown + 1 }
   }
 
-  function emit(method: string, state: NotiState, options: NotiOptions): NotiRecord {
+  function emit(
+    method: string,
+    state: NotiState,
+    options: NotiOptions,
+    ownsSlot = false
+  ): NotiRecord {
     assertOptions(method, options)
 
     const record = build(state, options)
+    const current = store.getCurrent()
+
+    if (
+      !ownsSlot &&
+      current !== null &&
+      current.phase !== 'exiting' &&
+      current.priority > record.priority
+    ) {
+      return record
+    }
+
     store.dispatch({ type: 'replace', record })
+
     return record
   }
 
@@ -194,6 +226,7 @@ export function createNotiApi(store: NotiStore): NotiApi {
     const loading = emit('promise', 'loading', {
       ...atPosition(options.loading, options.position),
       duration: null,
+      dismissible: false,
     })
 
     /**
@@ -221,7 +254,15 @@ export function createNotiApi(store: NotiStore): NotiApi {
 
       // Explicit rather than inherited: between the loading and this, another
       // call may have moved the island somewhere the flow never asked for.
-      emit('promise', state, atPosition(message, options.position))
+      emit(
+        'promise',
+        state,
+        {
+          priority: loading.priority,
+          ...atPosition(message, options.position),
+        },
+        true
+      )
     }
 
     void source
@@ -264,6 +305,35 @@ export function createNotiApi(store: NotiStore): NotiApi {
   }
 
   return {
+    loading: creator('loading', 'loading'),
+    update: (id, options) => {
+      assertOptions('update', options)
+      const current = store.getCurrent()
+
+      if (current === null || current.id !== id || current.phase === 'exiting') return false
+
+      const updated: NotiOptions = {
+        ...current,
+        autopilot: current.autopilot.enabled
+          ? { expand: current.autopilot.expand, collapse: current.autopilot.collapse ?? null }
+          : false,
+        ...options,
+        styles: mergeStyles(current.styles, options.styles),
+      }
+
+      if (
+        options.duration === undefined &&
+        options.type !== undefined &&
+        options.type !== current.state
+      ) {
+        delete updated.duration
+      }
+
+      const next = build(options.type ?? current.state, updated)
+      store.dispatch({ type: 'replace', record: { ...next, id } })
+
+      return true
+    },
     show: (options) => {
       assertOptions('show', options)
       // No seventh "default" state: an untyped call is a success.

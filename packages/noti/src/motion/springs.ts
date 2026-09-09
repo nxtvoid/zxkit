@@ -21,7 +21,7 @@ export const SETTLE =
 
 export const NOTI_MOTION = {
   enter: { duration: ENTER_DURATION, easing: SPRING },
-  exit: { duration: ENTER_DURATION, easing: SPRING },
+  exit: { duration: ENTER_DURATION, easing: 'cubic-bezier(0.4, 0, 1, 1)' },
   headingEnter: { duration: SPRING_DURATION, easing: SPRING },
   /** Shorter than the entrance, so the two layers never fight. */
   headingExit: { duration: HEADER_EXIT_DURATION, easing: 'ease' },

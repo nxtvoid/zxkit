@@ -18,7 +18,7 @@
 
 - **One notification** — a record or nothing. No stack, no queue, no limit.
 - **Objects only** — one options object per call. No string form.
-- **Latest invocation wins** — stale timers, exits and promise results are dropped.
+- **Latest eligible invocation wins** — stale timers, exits and promise results are dropped.
 - **No runtime dependencies** — the spring is a `linear()` easing, not a library.
 - **No stylesheet to import** — the CSS ships inside the JS.
 - **Accessible by construction** — a structural `li`, one live region, no nested controls.
@@ -66,19 +66,21 @@ noti.error('Failed', { duration: 4000 }) // ✗ TypeError
 
 ## Methods
 
-| Call                    | Meaning                                                  |
-| ----------------------- | -------------------------------------------------------- |
-| `noti.show(options)`    | Without `type`, reads as a success.                      |
-| `noti.success(options)` | —                                                        |
-| `noti.error(options)`   | —                                                        |
-| `noti.warning(options)` | —                                                        |
-| `noti.info(options)`    | —                                                        |
-| `noti.action(options)`  | A success carrying a `button`.                           |
-| `noti.promise(p, spec)` | Loading, then the outcome. Returns the original promise. |
-| `noti.dismiss(id?)`     | Closes it. Another id closes nothing.                    |
-| `noti.clear(position?)` | Closes it, or only if it currently sits at `position`.   |
+| Call                       | Meaning                                                      |
+| -------------------------- | ------------------------------------------------------------ |
+| `noti.loading(options)`    | Sticky loading state.                                        |
+| `noti.update(id, options)` | Update a live invocation; false for a stale or dismissed id. |
+| `noti.show(options)`       | Without `type`, reads as a success.                          |
+| `noti.success(options)`    | —                                                            |
+| `noti.error(options)`      | —                                                            |
+| `noti.warning(options)`    | —                                                            |
+| `noti.info(options)`       | —                                                            |
+| `noti.action(options)`     | A success carrying a `button`.                               |
+| `noti.promise(p, spec)`    | Loading, then the outcome. Returns the original promise.     |
+| `noti.dismiss(id?)`        | Closes it. Another id closes nothing.                        |
+| `noti.clear(position?)`    | Closes it, or only if it currently sits at `position`.       |
 
-Every call returns the same id: there is one notification.
+Every call returns a unique invocation id. A stale id cannot dismiss a replacement. The visual island remains the same DOM node.
 
 ```ts
 const id = noti.info({ title: 'New comment' })
@@ -89,7 +91,7 @@ noti.dismiss(id)
 
 ### Loading
 
-`loading` is a state, not a method, and it never auto-closes.
+`noti.loading(options)` shows a sticky loading state. The `show` form below is also supported.
 
 ```ts
 noti.show({ type: 'loading', title: 'Uploading file…' })
@@ -123,9 +125,39 @@ noti.action({
 })
 ```
 
-The button does **not** close the notification — a control that dismisses what it
-just confirmed takes the confirmation away. A rejected handler is reported and
-the island stays up.
+By default, the button does **not** close the notification — a control that dismisses what it
+just confirmed takes the confirmation away. Pending handlers block repeated clicks and pause expiry. Rejected handlers show a visible error and keep expiry paused until a successful retry or dismissal.
+
+### Two actions, always expanded
+
+```ts
+noti.action({
+  title: 'Delete product?',
+  description: 'Choose Cancel to keep the product.',
+  duration: null,
+  keepExpanded: true,
+  dismissible: false,
+  cancelButton: {
+    title: 'Cancel',
+    onClick: () => {},
+    dismissOnSuccess: true,
+  },
+  button: {
+    title: 'Delete',
+    onClick: () => deleteProduct(product.id),
+    dismissOnSuccess: true,
+  },
+})
+```
+
+`cancelButton` accepts the same options as `button` and appears first with a neutral
+style. While either handler is pending, both actions block additional clicks.
+`keepExpanded` opens the details automatically and prevents interaction or autopilot
+from collapsing them; it does not disable expiry, so use `duration: null` to wait for
+a decision. `dismissible: false` hides the X and disables Escape and swipe dismissal.
+
+This remains a nonmodal notification: it does not block the page or return a decision
+promise, and another notification may replace it.
 
 ### Promise
 
@@ -145,6 +177,9 @@ const project = await noti.promise(saveProject(), {
 - Accepts a promise or a factory; a factory's synchronous throw becomes a rejection.
 - Returns **the original promise**, errors still typed `unknown`. Nothing is
   swallowed or retimed.
+- While pending, a promise cannot be dismissed with the close button, Escape or
+  swipe. Programmatic dismissal remains available; it hides feedback without
+  cancelling the operation. Use an explicit action to implement cancellation.
 
 ```ts
 void noti.promise(() => publish(post), {
@@ -177,7 +212,7 @@ noti.info({ title: 'Synced', autopilot: false }) // opens only on hover and focu
 noti.info({ title: 'Synced', autopilot: { expand: 0, collapse: 2000 } })
 ```
 
-A `loading` notification never opens on its own: a load has nothing to reveal.
+Loading expands when it has details or a button, including cancellation controls. Long titles appear in full inside the expanded card.
 
 ### Per-call appearance
 
@@ -197,28 +232,110 @@ noti.error({ title: 'Payment failed', important: true }) // role="alert", assert
 noti.info({ title: 'Read-only mode', dismissible: false }) // no close button, no swipe
 ```
 
+## Updating and professional defaults
+
+```ts
+const id = noti.loading({ title: 'Uploading', description: '1 of 20 files' })
+noti.update(id, { description: '12 of 20 files' })
+noti.update(id, { type: 'success', title: 'Upload complete', description: null })
+```
+
+`update` merges fields, preserves the public id and restarts its timer. Changing
+`type` resets duration to the new state's defaults unless explicitly supplied.
+Other resolved fields remain unchanged; pass overrides to change them.
+It does not fire `onDismiss`. Stale or exiting ids return `false`. Updating a
+promise's loading invocation takes ownership away from its automatic outcome.
+
+```tsx
+<NotiOutlet
+  closeButtonLabel='Close notification'
+  actionErrorLabel='Could not complete the action. Please try again.'
+  stateOptions={{
+    error: { duration: null, priority: 10, autopilot: { collapse: null } },
+    action: { duration: null, autopilot: { collapse: null } },
+  }}
+/>
+```
+
+Defaults resolve from library, to `options`, to `stateOptions[type]`, to call options.
+`priority` is a finite number, default `0`. Lower-priority calls are dropped while
+a higher-priority notice is live; equal priority replaces it. There is no queue.
+A suppressed call returns its own inert id, which cannot close the visible notice.
+Dismissal releases the slot. `important` controls screen-reader urgency independently.
+Promise outcomes inherit their loading priority unless explicitly overridden.
+
+`autopilot: { collapse: null }` keeps details open until interaction collapses them
+or the notice expires. Use `duration: null` to disable expiry as well.
+
+```ts
+noti.action({
+  title: 'Restore the deleted file?',
+  duration: null,
+  button: {
+    title: 'Restore',
+    pendingTitle: 'Restoring...',
+    errorTitle: 'Restore failed. Try again.',
+    onClick: () => restoreFile(),
+    dismissOnSuccess: true,
+  },
+})
+```
+
+Buttons also accept `disabled`. Pending actions use `aria-busy` and `aria-disabled`
+while retaining keyboard focus. `dismissOnSuccess` only closes the invocation
+that started the action. Failure text is configurable per button or through the
+outlet's `actionErrorLabel`.
+
+### Migration from 1.x
+
+- IDs identify individual invocations. Retain the returned id for targeted dismissal or updates.
+- Close buttons are enabled by default; use `closeButton={false}` to hide them.
+- Loading notices expand when they have details or controls.
+- Title casing is preserved as supplied.
+- Dismiss callbacks can receive the `escape` reason.
+
 ## `NotiOptions`
 
-| Option        | Type                                                  | Default                           |
-| ------------- | ----------------------------------------------------- | --------------------------------- |
-| `title`       | `ReactNode`                                           | the state's own name              |
-| `description` | `ReactNode`                                           | —                                 |
-| `type`        | `success` `loading` `error` `warning` `info` `action` | `success`                         |
-| `position`    | `NotiPosition`                                        | the outlet's                      |
-| `duration`    | `number \| null`                                      | `6000`, `Infinity` for `loading`  |
-| `autopilot`   | `boolean \| { expand?: number; collapse?: number }`   | `{ expand: 150, collapse: 4000 }` |
-| `icon`        | `ReactNode \| ComponentType \| null`                  | the state's glyph                 |
-| `styles`      | `{ title?, description?, badge?, button? }`           | —                                 |
-| `fill`        | `string`                                              | `var(--noti-surface)`             |
-| `roundness`   | `number`                                              | `16`                              |
-| `button`      | `{ title, onClick, accessibleLabel? }`                | —                                 |
-| `important`   | `boolean`                                             | `false`                           |
-| `dismissible` | `boolean`                                             | `true`                            |
-| `onDismiss`   | `(context: NotiDismissContext) => void`               | —                                 |
-| `onAutoClose` | `(context: NotiDismissContext) => void`               | —                                 |
+| Option         | Type                                                        | Default                           |
+| -------------- | ----------------------------------------------------------- | --------------------------------- |
+| `priority`     | `number`                                                    | `0`                               |
+| `title`        | `ReactNode`                                                 | the state's own name              |
+| `description`  | `ReactNode`                                                 | —                                 |
+| `type`         | `success` `loading` `error` `warning` `info` `action`       | `success`                         |
+| `position`     | `NotiPosition`                                              | the outlet's                      |
+| `duration`     | `number \| null`                                            | `6000`, `Infinity` for `loading`  |
+| `autopilot`    | `boolean \| { expand?: number; collapse?: number \| null }` | `{ expand: 150, collapse: 4000 }` |
+| `icon`         | `ReactNode \| ComponentType \| null`                        | the state's glyph                 |
+| `styles`       | `{ title?, description?, badge?, button? }`                 | —                                 |
+| `fill`         | `string`                                                    | `var(--noti-surface)`             |
+| `roundness`    | `number`                                                    | `16`                              |
+| `button`       | `NotiButton`                                                | —                                 |
+| `cancelButton` | `NotiButton`                                                | —                                 |
+| `keepExpanded` | `boolean`                                                   | `false`                           |
+| `important`    | `boolean`                                                   | `false`                           |
+| `dismissible`  | `boolean`                                                   | `true`                            |
+| `onDismiss`    | `(context: NotiDismissContext) => void`                     | —                                 |
+| `onAutoClose`  | `(context: NotiDismissContext) => void`                     | —                                 |
 
 No `id`, no `outletId`, no `appearance`: identity belongs to the library, and
 there is one outlet.
+
+### `NotiButton`
+
+Both `button` and `cancelButton` accept:
+
+| Option             | Type                                        | Default                     |
+| ------------------ | ------------------------------------------- | --------------------------- |
+| `title`            | `ReactNode`                                 | required                    |
+| `onClick`          | `(event) => unknown` (may return a promise) | required                    |
+| `accessibleLabel`  | `string`                                    | —                           |
+| `disabled`         | `boolean`                                   | `false`                     |
+| `pendingTitle`     | `ReactNode`                                 | `title`                     |
+| `errorTitle`       | `ReactNode`                                 | outlet's `actionErrorLabel` |
+| `dismissOnSuccess` | `boolean`                                   | `false`                     |
+
+Explicitly disabled actions are removed from keyboard navigation. Pending actions
+retain focus, use `aria-disabled`, and block both handlers until settlement.
 
 ## `NotiOutlet`
 
@@ -236,25 +353,27 @@ Mount one, once. A second one warns and renders nothing.
 />
 ```
 
-| Prop               | Type                                      | Default              |
-| ------------------ | ----------------------------------------- | -------------------- |
-| `position`         | six positions                             | `top-right`          |
-| `offset`           | `number \| string \| { top?, right?, … }` | `24`                 |
-| `options`          | `Partial<NotiOptions>`                    | —                    |
-| `theme`            | `light \| dark \| system`                 | `system`             |
-| `icons`            | `Partial<Record<NotiState, …>>`           | built-in glyphs      |
-| `closeButton`      | `boolean`                                 | `false`              |
-| `closeButtonLabel` | `string`                                  | `Close notification` |
-| `closeButtonIcon`  | `ReactNode`                               | `×`                  |
-| `dir`              | `ltr \| rtl \| auto`                      | —                    |
-| `swipe`            | `boolean`                                 | `true`               |
-| `swipeThreshold`   | `number` (px of travel)                   | `45`                 |
-| `injectStyles`     | `boolean`                                 | `true`               |
-| `nonce`            | `string`                                  | —                    |
-| `unstyled`         | `boolean`                                 | `false`              |
-| `className`        | `string`                                  | —                    |
-| `classNames`       | `Partial<Record<NotiSlot, string>>`       | —                    |
-| `style`            | `CSSProperties`                           | —                    |
+| Prop               | Type                                      | Default                            |
+| ------------------ | ----------------------------------------- | ---------------------------------- |
+| `position`         | six positions                             | `top-right`                        |
+| `offset`           | `number \| string \| { top?, right?, … }` | `24`                               |
+| `options`          | `Partial<NotiOptions>`                    | —                                  |
+| `stateOptions`     | Per-state `Partial<NotiOptions>`          | -                                  |
+| `actionErrorLabel` | `string`                                  | `Action failed. Please try again.` |
+| `theme`            | `light \| dark \| system`                 | `system`                           |
+| `icons`            | `Partial<Record<NotiState, …>>`           | built-in glyphs                    |
+| `closeButton`      | `boolean`                                 | `true`                             |
+| `closeButtonLabel` | `string`                                  | `Close notification`               |
+| `closeButtonIcon`  | `ReactNode`                               | `×`                                |
+| `dir`              | `ltr \| rtl \| auto`                      | —                                  |
+| `swipe`            | `boolean`                                 | `true`                             |
+| `swipeThreshold`   | `number` (px of travel)                   | `45`                               |
+| `injectStyles`     | `boolean`                                 | `true`                             |
+| `nonce`            | `string`                                  | —                                  |
+| `unstyled`         | `boolean`                                 | `false`                            |
+| `className`        | `string`                                  | —                                  |
+| `classNames`       | `Partial<Record<NotiSlot, string>>`       | —                                  |
+| `style`            | `CSSProperties`                           | —                                  |
 
 `options` is merged into every call and the call always wins. `styles` merges
 one slot at a time rather than replacing the object:
@@ -348,7 +467,7 @@ Geometry and motion are theme-independent:
 | `--noti-line-height`                                      | `1.25rem`               |
 | `--noti-spring` / `--noti-settle`                         | `linear()` curves       |
 | `--noti-spring-duration`                                  | `600ms`                 |
-| `--noti-fade-duration` / `--noti-fade-delay`              | `360ms` / `180ms`       |
+| `--noti-fade-duration` / `--noti-fade-delay`              | `360ms` / `0ms`         |
 
 These are read back by the island itself, not only by the stylesheet: the SVG
 silhouette is measured against the width the element actually got, and the
@@ -423,8 +542,12 @@ in JavaScript.
 - **The silhouette** is two SVG rectangles through one alpha-merging filter.
   The blur becomes the concave neck between pill and card — a shape no border
   radius can express.
+- **Details wait for expansion.** The description and full title fade in only after the geometry finishes opening. `--noti-fade-delay` adds an optional delay after that point. Closing or replacing cancels the pending reveal.
 - **Closing does not rebound.** An overshoot would drive the body height below
   zero and flash it back, so the collapse is critically damped.
+- **Dismissal reverses arrival.** An expanded card collapses into its pill before
+  the pill fades and moves out. Swipe follows the gesture directly; reduced motion
+  uses a short fade.
 - **Refreshing collapses first.** A call arriving while the island is open
   collapses it, swaps the content, and lets autopilot reopen it. A second call
   replaces the pending one: updates never queue.
@@ -440,7 +563,7 @@ still changes; it arrives instead of moving.
 
 - The root is an `li`. It carries structure, never interaction.
 - **One** live region, `aria-atomic`, spanning heading and description, so the
-  notification is announced complete and exactly once. The description stays in
+  notification is announced as a complete message. The description stays in
   the tree while compact, so opening it later re-announces nothing.
 - `important: true` is the only route to `role="alert"` / assertive. Errors are
   polite by default.
@@ -453,7 +576,7 @@ still changes; it arrives instead of moving.
   refused on touch, where `pointerleave` arrives with the release and would shut
   the island inside the same gesture; a tap toggles instead, and a press
   anywhere else closes it and hands the countdown back.
-- Swipe is never the only way out: the close button and the API always are.
+- The close button is visible by default, even while compact. Escape dismisses from inside the notice. `dismissible: false` disables user dismissal.
 - Focus never moves on its own, and dismissing a notification that holds focus
   hands it back where it came from.
 - SSR-safe: nothing touches the DOM on import or during the server render.

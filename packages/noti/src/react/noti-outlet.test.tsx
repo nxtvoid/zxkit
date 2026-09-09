@@ -124,6 +124,492 @@ const POSITIONS: NotiPosition[] = [
 ]
 
 describe('NotiOutlet', () => {
+  it('leaves full-title, error and disabled-action appearance to unstyled consumers', () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(700)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { noti, store } = setup()
+    render(<NotiOutletWithStore store={store} unstyled />)
+    push(() =>
+      noti.action({
+        title: 'A long title',
+        keepExpanded: true,
+        cancelButton: {
+          title: 'Cancel',
+          onClick: () => {
+            throw new Error('Failed')
+          },
+        },
+        button: { title: 'Delete', disabled: true, onClick: () => {} },
+      })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    const fullTitle = document.querySelector('[data-noti-full-title]')!
+    const error = document.querySelector('[data-noti-action-error]')!
+    expect(getComputedStyle(fullTitle).fontWeight).not.toBe('600')
+    expect(getComputedStyle(fullTitle).marginBlockEnd).not.toBe('8px')
+    expect(getComputedStyle(error).order).not.toBe('1')
+    expect(getComputedStyle(screen.getByRole('button', { name: 'Delete' })).opacity).not.toBe(
+      '0.65'
+    )
+  })
+
+  it('disables both actions as soon as dismissal starts, before the exit finishes', () => {
+    const { restore } = installControlledAnimations()
+    try {
+      const { noti, store } = setup()
+      const remove = vi.fn()
+      render(<NotiOutletWithStore store={store} />)
+      const id = push(() =>
+        noti.action({
+          title: 'Delete?',
+          cancelButton: { title: 'Cancel', onClick: () => {}, dismissOnSuccess: true },
+          button: { title: 'Delete', onClick: remove },
+        })
+      )
+      const button = screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement
+      push(() => noti.dismiss(id))
+      expect(store.getCurrent()?.phase).toBe('exiting')
+      expect(button.isConnected).toBe(true)
+      expect(button.disabled).toBe(true)
+      act(() => button.focus())
+      expect(document.activeElement).not.toBe(button)
+      fireEvent.click(button)
+      expect(remove).not.toHaveBeenCalled()
+    } finally {
+      cleanup()
+      restore()
+    }
+  })
+
+  it('keeps the hidden-tab hold when two outlets register in the same commit', () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    const { noti, store, clock } = setup()
+    render(
+      <>
+        <NotiOutletWithStore store={store} />
+        <NotiOutletWithStore store={store} />
+      </>
+    )
+    push(() => noti.success({ title: 'Done', duration: 100 }))
+    expect(store.getCurrent()?.paused).toBe(true)
+    advance(clock, 1000)
+    expect(items()).toHaveLength(1)
+    hidden.mockReturnValue(false)
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    advance(clock, 101)
+    expect(items()).toHaveLength(0)
+  })
+
+  it('places secondary-action errors after the row of buttons', async () => {
+    const { noti, store } = setup()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<NotiOutletWithStore store={store} />)
+    push(() =>
+      noti.action({
+        title: 'Choose',
+        keepExpanded: true,
+        cancelButton: {
+          title: 'Cancel',
+          onClick: () => {
+            throw new Error('Failed')
+          },
+        },
+        button: { title: 'Delete', onClick: () => {} },
+      })
+    )
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Cancel' })))
+    const error = document.querySelector('[data-noti-action-error]')!
+    expect(getComputedStyle(error).order).toBe('1')
+    expect(getComputedStyle(screen.getByRole('button', { name: 'Delete' })).order).not.toBe('1')
+    expect(screen.getByRole('button', { name: 'Delete' }).getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('positions a long pill before opening, then reveals as soon as the measured card fits', () => {
+    vi.useFakeTimers()
+    try {
+      let drawnWidth = 70
+      let drawnX = 280
+      let drawnHeight = 40
+      const computed = globalThis.getComputedStyle
+      vi.spyOn(globalThis, 'getComputedStyle').mockImplementation((element) => {
+        if (element.hasAttribute('data-noti-island-pill')) {
+          return {
+            width: `${drawnWidth}px`,
+            getPropertyValue: () => `${drawnX}px`,
+          } as unknown as CSSStyleDeclaration
+        }
+        return computed(element)
+      })
+      vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(700)
+      vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(80)
+      vi.spyOn(HTMLLIElement.prototype, 'offsetWidth', 'get').mockReturnValue(350)
+      vi.spyOn(HTMLLIElement.prototype, 'offsetHeight', 'get').mockImplementation(() => drawnHeight)
+      vi.spyOn(HTMLLIElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        width: 350,
+      } as DOMRect)
+      const { noti, store } = setup()
+      render(<NotiOutletWithStore store={store} />)
+      push(() => noti.info({ title: 'A long title', description: 'Details', autopilot: false }))
+      tick(20)
+      const item = firstItem()
+      open(item)
+      tick(180)
+      expect(item.hasAttribute('data-noti-expanded')).toBe(false)
+      drawnWidth = 350
+      drawnX = 0
+      tick(48)
+      expect(item.hasAttribute('data-noti-expanded')).toBe(true)
+      expect(item.querySelector('[data-noti-body][data-noti-visible]')).toBeNull()
+      drawnHeight = Number.parseFloat(item.style.getPropertyValue('--noti-island-height'))
+      tick(32)
+      expect(item.querySelector('[data-noti-body][data-noti-visible]')).not.toBeNull()
+      fireEvent.pointerLeave(item)
+      tick(1000)
+      expect(item.hasAttribute('data-noti-expanded')).toBe(false)
+      expect(item.querySelector('[data-noti-body][data-noti-visible]')).toBeNull()
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
+  })
+
+  it('waits for the expansion to finish before revealing long text', () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(700)
+      const { noti, store } = setup()
+      render(<NotiOutletWithStore store={store} />)
+      push(() =>
+        noti.info({
+          title: 'A long title',
+          description: 'A detailed description',
+          autopilot: false,
+        })
+      )
+      tick(20)
+      const item = firstItem()
+      open(item)
+      const body = item.querySelector('[data-noti-body]')!
+      tick(180)
+      expect(body.hasAttribute('data-noti-visible')).toBe(false)
+      act(() => {
+        endTransition(body, 'opacity')
+      })
+      expect(body.hasAttribute('data-noti-visible')).toBe(false)
+      act(() => {
+        endTransition(item, 'block-size')
+      })
+      expect(body.hasAttribute('data-noti-visible')).toBe(true)
+      fireEvent.pointerLeave(item)
+      expect(body.hasAttribute('data-noti-visible')).toBe(false)
+      tick(1000)
+      expect(body.hasAttribute('data-noti-visible')).toBe(false)
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels content reveal when expansion is interrupted and falls back without transition events', () => {
+    vi.useFakeTimers()
+    try {
+      const { noti, store } = setup()
+      render(<NotiOutletWithStore store={store} />)
+      push(() => noti.info({ title: 'Notice', description: 'Details', autopilot: false }))
+      tick(20)
+      const item = firstItem()
+      open(item)
+      tick(180)
+      fireEvent.pointerLeave(item)
+      tick(SPRING_DURATION + FALLBACK_MARGIN)
+      expect(item.querySelector('[data-noti-body][data-noti-visible]')).toBeNull()
+      open(item)
+      tick(SPRING_DURATION + FALLBACK_MARGIN - 1)
+      expect(item.querySelector('[data-noti-body][data-noti-visible]')).toBeNull()
+      tick(1)
+      expect(item.querySelector('[data-noti-body][data-noti-visible]')).not.toBeNull()
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
+  })
+  it('cancels a pending collapse exit when a replacement arrives', () => {
+    vi.useFakeTimers()
+    const { animations, restore } = installControlledAnimations()
+    try {
+      const { noti, store } = setup()
+      render(<NotiOutletWithStore store={store} />)
+      push(() => noti.info({ title: 'Old', description: 'Details', autopilot: false }))
+      act(() => {
+        for (const animation of [...animations]) animation.finish()
+      })
+      open(firstItem())
+      fireEvent.click(screen.getByRole('button', { name: 'Close notification' }))
+      push(() => noti.info({ title: 'New', autopilot: false }))
+      const count = animations.length
+      tick(SPRING_DURATION + 1)
+      expect(animations).toHaveLength(count)
+      expect(store.getCurrent()?.title).toBe('New')
+      expect(store.getCurrent()?.phase).not.toBe('exiting')
+    } finally {
+      cleanup()
+      restore()
+      vi.useRealTimers()
+    }
+  })
+  it('collapses an open card before animating the pill out, and waits for completion', () => {
+    vi.useFakeTimers()
+    const { animations, restore } = installControlledAnimations()
+    try {
+      const { noti, store } = setup()
+      render(<NotiOutletWithStore store={store} />)
+      push(() => noti.info({ title: 'Notice', description: 'Details', autopilot: false }))
+      act(() => {
+        for (const animation of [...animations]) animation.finish()
+      })
+      const item = firstItem()
+      open(item)
+      const before = animations.length
+      fireEvent.click(screen.getByRole('button', { name: 'Close notification' }))
+      expect(item.hasAttribute('data-noti-expanded')).toBe(false)
+      expect(item.getAttribute('data-noti-phase')).toBe('exiting')
+      tick(SPRING_DURATION - 1)
+      expect(animations).toHaveLength(before)
+      expect(items()).toHaveLength(1)
+      tick(1)
+      expect(animations).toHaveLength(before + 1)
+      act(() => {
+        animations.at(-1)?.finish()
+      })
+      expect(items()).toHaveLength(0)
+    } finally {
+      cleanup()
+      restore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not allow user dismissal during a promise, then restores the close button', async () => {
+    const { noti, store } = setup()
+    let resolve!: () => void
+    render(<NotiOutletWithStore store={store} />)
+    push(() =>
+      noti.promise(
+        new Promise<void>((done) => {
+          resolve = done
+        }),
+        {
+          loading: { title: 'Saving', dismissible: true },
+          success: { title: 'Saved' },
+        }
+      )
+    )
+    expect(screen.queryByRole('button', { name: 'Close notification' })).toBeNull()
+    fireEvent.keyDown(firstItem(), { key: 'Escape' })
+    expect(store.getCurrent()?.state).toBe('loading')
+    expect(store.getCurrent()?.dismissible).toBe(false)
+    await act(async () => {
+      resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(screen.getByRole('button', { name: 'Close notification' })).toBeTruthy()
+  })
+  it('reveals the full title when the pill cannot fit it, without duplicating its announcement', () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(700)
+    const { noti, store } = setup()
+    render(<NotiOutletWithStore store={store} />)
+    const title = 'A very long file name that must remain readable'
+    push(() => noti.info({ title }))
+    open(firstItem())
+    const full = document.querySelector('[data-noti-full-title]')
+    expect(full?.textContent).toBe(title)
+    expect(full?.getAttribute('aria-hidden')).toBe('true')
+    expect(store.getCurrent()?.expanded).toBe(true)
+  })
+  it('keeps a two-action notification expanded and cancels without running its primary action', () => {
+    reduceMotion()
+    const { noti, store, clock } = setup()
+    const remove = vi.fn()
+    const cancel = vi.fn()
+    render(<NotiOutletWithStore store={store} />)
+    push(() =>
+      noti.action({
+        title: 'Delete product?',
+        duration: null,
+        keepExpanded: true,
+        dismissible: false,
+        autopilot: false,
+        cancelButton: { title: 'Cancel', onClick: cancel, dismissOnSuccess: true },
+        button: { title: 'Delete', onClick: remove },
+      })
+    )
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Cancel',
+      'Delete',
+    ])
+    expect(store.getCurrent()?.expanded).toBe(true)
+    fireEvent.pointerEnter(firstItem())
+    fireEvent.pointerLeave(firstItem())
+    fireEvent.focus(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.blur(screen.getByRole('button', { name: 'Cancel' }), { relatedTarget: document.body })
+    fireEvent.keyDown(firstItem(), { key: 'Escape' })
+    advance(clock, 10000)
+    expect(store.getCurrent()?.expanded).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(remove).not.toHaveBeenCalled()
+    expect(items()).toHaveLength(0)
+  })
+
+  it('locks both actions while one is pending and releases them after failure', async () => {
+    reduceMotion()
+    const { noti, store } = setup()
+    let reject!: (error: Error) => void
+    const cancel = vi.fn()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<NotiOutletWithStore store={store} />)
+    push(() =>
+      noti.action({
+        title: 'Delete product?',
+        keepExpanded: true,
+        cancelButton: { title: 'Cancel', onClick: cancel, dismissOnSuccess: true },
+        button: {
+          title: 'Delete',
+          onClick: () =>
+            new Promise<void>((_, fail) => {
+              reject = fail
+            }),
+        },
+      })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(screen.getByRole('button', { name: 'Cancel' }).getAttribute('aria-disabled')).toBe(
+      'true'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(cancel).not.toHaveBeenCalled()
+    await act(async () => {
+      reject(new Error('Failed'))
+      await Promise.resolve()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(items()).toHaveLength(0)
+    push(() => noti.success({ title: 'Next' }))
+    expect(store.getCurrent()?.paused).toBe(false)
+  })
+
+  it('blocks repeat actions, pauses expiry, and displays a localized failure', async () => {
+    const { noti, store, clock } = setup()
+    let reject!: (reason: Error) => void
+    const onClick = vi.fn(
+      () =>
+        new Promise<void>((_, fail) => {
+          reject = fail
+        })
+    )
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<NotiOutletWithStore store={store} actionErrorLabel='Intenta nuevamente' />)
+    push(() =>
+      noti.action({
+        title: 'Retry',
+        duration: 100,
+        button: { title: 'Run', pendingTitle: 'Working', onClick },
+      })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Working' }))
+    expect(onClick).toHaveBeenCalledTimes(1)
+    advance(clock, 1000)
+    expect(items()).toHaveLength(1)
+    await act(async () => {
+      reject(new Error('network'))
+      await Promise.resolve()
+    })
+    expect(screen.getByText('Intenta nuevamente')).toBeTruthy()
+    advance(clock, 1000)
+    expect(items()).toHaveLength(1)
+  })
+
+  it('releases focus lost when an action replaces itself with a success notification', () => {
+    reduceMotion()
+    const { noti, store, clock } = setup()
+    render(<NotiOutletWithStore store={store} />)
+    push(() =>
+      noti.action({
+        title: 'Delete product?',
+        duration: null,
+        keepExpanded: true,
+        dismissible: false,
+        button: {
+          title: 'Delete',
+          onClick: () => {
+            noti.success({ title: 'Deleted', duration: 100 })
+          },
+        },
+      })
+    )
+    const button = screen.getByRole('button', { name: 'Delete' })
+    fireEvent.pointerEnter(firstItem())
+    act(() => button.focus())
+    expect(store.getCurrent()?.paused).toBe(true)
+    fireEvent.click(button)
+    expect(document.activeElement).toBe(document.body)
+    expect(store.getCurrent()?.title).toBe('Deleted')
+    // The real hover is still respected, even after the focused action is gone.
+    advance(clock, 200)
+    expect(items()).toHaveLength(1)
+    fireEvent.pointerLeave(firstItem())
+    expect(store.getCurrent()?.paused).toBe(false)
+    advance(clock, 101)
+    expect(items()).toHaveLength(0)
+  })
+
+  it('never dismisses a replacement when an older action completes', async () => {
+    reduceMotion()
+    const { noti, store } = setup()
+    let resolve!: () => void
+    render(<NotiOutletWithStore store={store} />)
+    push(() =>
+      noti.action({
+        title: 'Old',
+        button: {
+          title: 'Run',
+          dismissOnSuccess: true,
+          onClick: () =>
+            new Promise<void>((done) => {
+              resolve = done
+            }),
+        },
+      })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    push(() => noti.error({ title: 'New' }))
+    await act(async () => {
+      resolve()
+      await Promise.resolve()
+    })
+    expect(store.getCurrent()?.title).toBe('New')
+    expect(store.getCurrent()?.paused).toBe(false)
+  })
+
+  it('closes with Escape from a control, respecting dismissible', () => {
+    const { noti, store } = setup()
+    render(<NotiOutletWithStore store={store} />)
+    push(() => noti.info({ title: 'Notice' }))
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Close notification' }), { key: 'Escape' })
+    expect(items()).toHaveLength(0)
+    push(() =>
+      noti.info({
+        title: 'Notice',
+        dismissible: false,
+        button: { title: 'Run', onClick: () => {} },
+      })
+    )
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Run' }), { key: 'Escape' })
+    expect(items()).toHaveLength(1)
+  })
   it('renders nothing until there is something to show', () => {
     const { store } = setup()
     const { container } = render(<NotiOutletWithStore store={store} />)
@@ -325,7 +811,7 @@ describe('NotiOutlet', () => {
       }
     })
 
-    it('never opens for a loading notification', () => {
+    it('opens loading details and cancellation controls', () => {
       vi.useFakeTimers()
       try {
         const { noti, store } = setup()
@@ -344,14 +830,18 @@ describe('NotiOutlet', () => {
         // at 4000ms, so only checking after it would hide an island that did
         // open — over a silhouette still drawn compact.
         tick(150)
-        expect(store.getCurrent()?.expanded).toBe(false)
+        expect(store.getCurrent()?.expanded).toBe(true)
         expect(item.querySelector('[data-noti-body][data-noti-visible]')).toBeNull()
+        act(() => {
+          endTransition(item, 'block-size')
+        })
+        expect(item.querySelector('[data-noti-body][data-noti-visible]')).not.toBeNull()
 
         tick(4_850)
         expect(store.getCurrent()?.expanded).toBe(false)
 
         fireEvent.pointerEnter(item)
-        expect(store.getCurrent()?.expanded).toBe(false)
+        expect(store.getCurrent()?.expanded).toBe(true)
         expect(item.getAttribute('aria-expanded')).toBeNull()
       } finally {
         vi.useRealTimers()
@@ -422,6 +912,37 @@ describe('NotiOutlet', () => {
       // of the full-width box, nowhere near the capsule.
       expect(inset).toBeGreaterThan(8)
       expect(inset).toBeLessThan(350 - pillWidth + 20)
+    })
+
+    it.each<NotiPosition>([
+      'bottom-left',
+      'bottom-center',
+      'bottom-right',
+      'top-left',
+      'top-center',
+      'top-right',
+    ])('reclaims the close slot when expanded at %s and restores it on collapse', (position) => {
+      vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(160)
+      const { noti, store } = setup()
+      const view = render(<NotiOutletWithStore store={store} closeButton position={position} />)
+      push(() =>
+        noti.info({ title: 'Centered notification', description: 'Details', autopilot: false })
+      )
+      const item = firstItem()
+      const width = () => Number.parseFloat(item.style.getPropertyValue('--noti-pill-width'))
+      const compact = width()
+
+      fireEvent.pointerEnter(item)
+      const expandedWidth = width()
+      expect(expandedWidth).toBeLessThan(compact)
+      expect(screen.getByRole('button', { name: 'Close notification' })).not.toBeNull()
+
+      // An expanded pill should fit exactly as if no close control existed.
+      view.rerender(<NotiOutletWithStore store={store} closeButton={false} position={position} />)
+      expect(width()).toBe(expandedWidth)
+      view.rerender(<NotiOutletWithStore store={store} closeButton position={position} />)
+      fireEvent.pointerLeave(item)
+      expect(width()).toBe(compact)
     })
 
     it('stays compact with nothing more to say', () => {
@@ -826,7 +1347,7 @@ describe('NotiOutlet', () => {
         expect(onClick).toHaveBeenCalledTimes(1)
       })
 
-      it('never opens a loading island, whichever pointer asks', () => {
+      it('opens loading details on touch', () => {
         const { noti, store } = setup()
         render(<NotiOutletWithStore store={store} />)
         push(() =>
@@ -834,7 +1355,7 @@ describe('NotiOutlet', () => {
         )
 
         tap(firstItem())
-        expect(store.getCurrent()?.expanded).toBe(false)
+        expect(store.getCurrent()?.expanded).toBe(true)
       })
     })
   })
@@ -1022,9 +1543,9 @@ describe('NotiOutlet', () => {
   })
 
   describe('close button', () => {
-    it('is opt-in', () => {
+    it('can be disabled', () => {
       const { noti, store } = setup()
-      render(<NotiOutletWithStore store={store} />)
+      render(<NotiOutletWithStore store={store} closeButton={false} />)
       push(() => noti.success({ title: 'Saved' }))
 
       expect(screen.queryByRole('button', { name: 'Close notification' })).toBeNull()
@@ -1477,7 +1998,8 @@ describe('NotiOutlet', () => {
       // A 380px island with a 350px silhouette misaligns pill, header and mask.
       const svg = document.querySelector('[data-noti-island-svg]')
       expect(svg?.getAttribute('width')).toBe('380')
-      expect(svg?.getAttribute('viewBox')).toBe('0 0 380 40')
+      expect(svg?.getAttribute('viewBox')).toBeNull()
+      expect((svg as SVGElement).style.width).toBe('380px')
       expect(document.querySelector('[data-noti-island-body]')?.getAttribute('width')).toBe('380')
 
       width.mockRestore()

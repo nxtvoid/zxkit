@@ -10,9 +10,28 @@
  * `dir='rtl'` mirrors without an extra rule.
  */
 
-[data-noti-outlet] {
+[data-noti-outlet]:not([data-noti-unstyled]) {
   font-family: inherit;
   color: var(--noti-fg);
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-full-title] {
+  font-weight: 600;
+  color: var(--noti-fg);
+  margin-block-end: 8px;
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-action-error] {
+  /* Keep feedback below both actions, including when the secondary one fails. */
+  order: 1;
+  flex-basis: 100%;
+  color: var(--noti-error);
+  font-size: var(--noti-font-size-description);
+}
+
+[data-noti-outlet]:not([data-noti-unstyled]) [data-noti-button][aria-disabled='true'] {
+  opacity: 0.65;
+  cursor: default;
 }
 
 /* Own box model, not the host page's: without this the header is 40px in an
@@ -125,7 +144,10 @@
 }
 
 /* Closing does not rebound: an overshoot would drive the height below zero. */
-[data-noti-item][data-noti-ready]:not([data-noti-expanded]) [data-noti-island-body] {
+[data-noti-outlet]:not([data-noti-unstyled])
+  [data-noti-item][data-noti-ready]:not([data-noti-expanded]),
+[data-noti-item][data-noti-ready]:not([data-noti-expanded])
+  :is([data-noti-island-body], [data-noti-island-pill], [data-noti-header], [data-noti-close]) {
   transition-timing-function: var(--noti-settle);
 }
 
@@ -151,7 +173,7 @@
   /* Not a transform: this is a clip, and it is what the fade below reads as
      "there is more". Animating it costs layout, but only inside this absolutely
      positioned box — and no transform expresses it. */
-  max-width: var(--noti-pill-width);
+  max-width: calc(var(--noti-pill-width) - var(--noti-heading-reserve, 12px));
   /* Carries the pill's `x` as well as the lift, so the header moves on the
      compositor instead of through `left`. */
   transform: var(--noti-heading-transform);
@@ -186,6 +208,7 @@
 }
 
 [data-noti-heading-stack] {
+  flex-shrink: 0;
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -219,7 +242,6 @@
   font-size: var(--noti-font-size-title);
   line-height: 1rem;
   font-weight: 500;
-  text-transform: capitalize;
 }
 
 [data-noti-outlet]:not([data-noti-unstyled]) [data-noti-icon] {
@@ -277,7 +299,7 @@
    after the card has opened; on the way out the same delay would leave it
    hanging over a silhouette that already collapsed — a close button still
    floating where the card's corner used to be. */
-[data-noti-item][data-noti-ready] :is([data-noti-body], [data-noti-actions], [data-noti-close]) {
+[data-noti-item][data-noti-ready] :is([data-noti-body], [data-noti-actions]) {
   transition: opacity calc(var(--noti-spring-duration) * 0.08) ease
     calc(var(--noti-spring-duration) * 0.04);
 }
@@ -302,6 +324,7 @@
    island is open is a control the keyboard cannot find. It stays in the tab
    order and in the accessibility tree, and focusing it reveals it. */
 [data-noti-outlet]:not([data-noti-unstyled]) [data-noti-actions] {
+  flex-wrap: wrap;
   position: absolute;
   z-index: 3;
   left: 0;
@@ -353,11 +376,25 @@
   transition: background-color 150ms ease;
 }
 
+[data-noti-outlet]:not([data-noti-unstyled])
+  [data-noti-actions]
+  [data-noti-button][data-noti-secondary] {
+  background: transparent;
+  color: var(--noti-fg);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--noti-fg) 15%, transparent);
+}
+
 /* Only where a pointer can actually leave again. On touch a tap latches
    `:hover` and the control stays lit with nobody hovering it. */
 @media (hover: hover) and (pointer: fine) {
   [data-noti-outlet]:not([data-noti-unstyled]) [data-noti-actions] [data-noti-button]:hover {
     background: color-mix(in oklch, var(--noti-accent) 25%, transparent);
+  }
+
+  [data-noti-outlet]:not([data-noti-unstyled])
+    [data-noti-actions]
+    [data-noti-button][data-noti-secondary]:hover {
+    background: color-mix(in oklch, var(--noti-fg) 6%, transparent);
   }
 }
 
@@ -370,8 +407,8 @@
   display: grid;
   place-items: center;
   appearance: none;
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: 28px;
+  block-size: 28px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -379,8 +416,8 @@
   font: inherit;
   font-size: 1.1rem;
   line-height: 1;
-  opacity: var(--noti-content-opacity, 0);
-  pointer-events: none;
+  opacity: 1;
+  pointer-events: auto;
   cursor: pointer;
 }
 
@@ -405,8 +442,10 @@
   }
 }
 
-[data-noti-item][data-noti-ready] [data-noti-close][data-noti-visible] {
-  transition: opacity var(--noti-fade-duration) ease var(--noti-fade-delay);
+[data-noti-item][data-noti-ready] [data-noti-close] {
+  transition:
+    top var(--noti-spring-duration) var(--noti-spring),
+    inset-inline-end var(--noti-spring-duration) var(--noti-spring);
 }
 
 @media (hover: hover) and (pointer: fine) {
