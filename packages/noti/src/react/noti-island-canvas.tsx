@@ -64,7 +64,12 @@ export function NotiIslandCanvas({
 
   return (
     <div data-noti-island-canvas='' data-noti-edge={edge} aria-hidden='true' style={style}>
-      <svg data-noti-island-svg='' width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+      <svg
+        data-noti-island-svg=''
+        width={width}
+        height={height}
+        style={{ display: 'block', width, height, maxWidth: 'none' }}
+      >
         <defs>
           <filter
             id={filterId}
@@ -93,7 +98,7 @@ export function NotiIslandCanvas({
           rx={roundness}
           ry={roundness}
           style={surface}
-          opacity={expanded ? 1 : 0}
+          opacity={1}
         />
       </svg>
     </div>

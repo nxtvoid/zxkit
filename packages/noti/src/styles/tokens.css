@@ -88,8 +88,8 @@
   );
 
   --noti-spring-duration: 600ms;
-  --noti-fade-duration: 360ms;
-  --noti-fade-delay: 180ms;
+  --noti-fade-duration: 160ms;
+  --noti-fade-delay: 0ms;
 }
 
 /**

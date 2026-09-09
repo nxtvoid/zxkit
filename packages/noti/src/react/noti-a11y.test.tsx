@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import axe from 'axe-core'
-import { act } from 'react'
+import { act, useLayoutEffect } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -62,6 +62,20 @@ async function seriousViolations(container: HTMLElement) {
 }
 
 describe('accessibility', () => {
+  it('mounts an empty live region before inserting the initial complete message', () => {
+    const { noti, store } = setup()
+    noti.info({ title: 'Saved', description: 'All files are synced.' })
+    let initial: string | null | undefined
+    function Probe() {
+      useLayoutEffect(() => {
+        initial = document.querySelector('[data-noti-content]')?.textContent
+      }, [])
+      return <NotiOutletWithStore store={store} />
+    }
+    render(<Probe />)
+    expect(initial).toBe('')
+    expect(screen.getByRole('status').textContent).toContain('All files are synced.')
+  })
   it('has no serious axe violations with a button and a close button', async () => {
     const { noti, store } = setup()
     const { container } = render(<NotiOutletWithStore store={store} closeButton />)

@@ -1,6 +1,6 @@
 import type { ComponentType, MouseEvent, ReactNode } from 'react'
 
-/** One notification, one id. Not in {@link NotiOptions}: callers cannot mint one. */
+/** Identifies one invocation, independently from the persistent visual island. */
 export type NotiId = string
 
 /** What the notification means. */
@@ -15,10 +15,16 @@ export type NotiState = 'success' | 'loading' | 'error' | 'warning' | 'info' | '
 type NotiPhase = 'entering' | 'visible' | 'exiting'
 
 /** Why a notification left the screen. */
-export type DismissReason = 'api' | 'close-button' | 'swipe' | 'timeout' | 'replaced'
+export type DismissReason = 'api' | 'close-button' | 'escape' | 'swipe' | 'timeout' | 'replaced'
 
 /** Reasons accumulate: the timer resumes once every one is gone. */
-export type PauseReason = 'hover' | 'focus' | 'document-hidden' | 'programmatic'
+export type PauseReason =
+  | 'hover'
+  | 'focus'
+  | 'document-hidden'
+  | 'programmatic'
+  | `action:${number}`
+  | `action:${number}:cancel`
 
 export type NotiPosition =
   'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
@@ -27,7 +33,7 @@ export type NotiPosition =
 export type NotiContent = ReactNode
 
 /** `false` never opens on its own; hover and focus still do. Delays in ms. */
-export type NotiAutopilot = boolean | { expand?: number; collapse?: number }
+export type NotiAutopilot = boolean | { expand?: number; collapse?: number | null }
 
 /** A component, not an element. Covers `forwardRef`/`memo` — lucide ships those. */
 export type NotiIconComponent = ComponentType
@@ -66,6 +72,13 @@ export interface NotiButton {
   onClick: (event: MouseEvent<HTMLButtonElement> | undefined) => unknown
   /** Accessible name, required when `title` is not plain text. */
   accessibleLabel?: string
+  disabled?: boolean
+  /** Label displayed while the returned promise is pending. */
+  pendingTitle?: NotiContent
+  /** Visible failure message. Defaults to the outlet's localized message. */
+  errorTitle?: NotiContent
+  /** Close this invocation only after a successful handler. */
+  dismissOnSuccess?: boolean
 }
 
 export interface NotiDismissContext {
@@ -75,6 +88,8 @@ export interface NotiDismissContext {
 
 /** Everything a call can say. No `id`: identity belongs to the library. */
 export interface NotiOptions {
+  /** Higher numbers protect this notification from lower-priority replacements. Default 0. */
+  priority?: number
   /** Omitted, the state names itself: `noti.error({})` reads "Error". */
   title?: NotiContent
   description?: NotiContent
@@ -92,6 +107,10 @@ export interface NotiOptions {
   roundness?: number
   autopilot?: NotiAutopilot
   button?: NotiButton
+  /** Secondary action, rendered before the primary button. */
+  cancelButton?: NotiButton
+  /** Open automatically and remain expanded until dismissed or replaced. */
+  keepExpanded?: boolean
 
   /** Announce with `role="alert"` / `aria-live="assertive"` instead of polite. */
   important?: boolean
@@ -115,7 +134,8 @@ export interface NotiAutopilotTiming {
  * with a fresh `instanceId`, which is what restarts timers and autopilot.
  */
 export interface NotiRecord {
-  /** Constant: identity of the singleton, not of this call. */
+  readonly priority: number
+  /** Identity of this invocation. Preserved by update(). */
   readonly id: NotiId
   /** New on every call. Stale effects compare against it. */
   readonly instanceId: number
@@ -133,6 +153,8 @@ export interface NotiRecord {
   readonly roundness: number
   readonly autopilot: NotiAutopilotTiming
   readonly button: NotiButton | undefined
+  readonly cancelButton?: NotiButton
+  readonly keepExpanded?: boolean
   readonly dismissible: boolean
   readonly important: boolean
   readonly expanded: boolean

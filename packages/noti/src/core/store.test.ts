@@ -50,14 +50,15 @@ describe('createNotiStore', () => {
     it('auto-closes and then removes', () => {
       const { store, clock } = setup()
       const onAutoClose = vi.fn()
-      store.dispatch({ type: 'replace', record: makeRecord({ duration: 1_000, onAutoClose }) })
+      const record = makeRecord({ duration: 1_000, onAutoClose })
+      store.dispatch({ type: 'replace', record })
 
       clock.advance(999)
       expect(store.getCurrent()?.phase).not.toBe('exiting')
 
       clock.advance(1)
       expect(store.getCurrent()?.phase).toBe('exiting')
-      expect(onAutoClose).toHaveBeenCalledWith({ id: 'noti-default', reason: 'timeout' })
+      expect(onAutoClose).toHaveBeenCalledWith({ id: record.id, reason: 'timeout' })
 
       clock.advance(300)
       expect(store.getCurrent()).toBeNull()
@@ -173,11 +174,12 @@ describe('createNotiStore', () => {
     it('reports a replacement to the notification it displaced, once', () => {
       const { store } = setup()
       const onDismiss = vi.fn()
-      store.dispatch({ type: 'replace', record: makeRecord({ onDismiss }) })
+      const record = makeRecord({ onDismiss })
+      store.dispatch({ type: 'replace', record })
       store.dispatch({ type: 'replace', record: makeRecord() })
 
       expect(onDismiss).toHaveBeenCalledTimes(1)
-      expect(onDismiss).toHaveBeenCalledWith({ id: 'noti-default', reason: 'replaced' })
+      expect(onDismiss).toHaveBeenCalledWith({ id: record.id, reason: 'replaced' })
     })
 
     it('does not report a replacement twice when the old one had already left', () => {
@@ -189,7 +191,7 @@ describe('createNotiStore', () => {
       store.dispatch({ type: 'replace', record: makeRecord() })
 
       expect(onDismiss).toHaveBeenCalledTimes(1)
-      expect(onDismiss).toHaveBeenCalledWith({ id: 'noti-default', reason: 'swipe' })
+      expect(onDismiss).toHaveBeenCalledWith({ id: record.id, reason: 'swipe' })
     })
 
     it('separates auto-close from dismissal', () => {
@@ -213,7 +215,7 @@ describe('createNotiStore', () => {
       store.dispatch({ type: 'replace', record })
       store.dispatch({ type: 'dismiss', instanceId: record.instanceId, reason: 'close-button' })
 
-      expect(onDismiss).toHaveBeenCalledWith({ id: 'noti-default', reason: 'close-button' })
+      expect(onDismiss).toHaveBeenCalledWith({ id: record.id, reason: 'close-button' })
     })
   })
 

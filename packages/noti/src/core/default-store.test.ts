@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// `v2` is the singleton shape. A `v1` store parked on `globalThis` by an older
-// bundle holds a record list this code cannot read, so the key moved with it.
-const defaultStoreKey = Symbol.for('@zxkit/noti/default-store/v2')
-const legacyStoreKey = Symbol.for('@zxkit/noti/default-store/v1')
+// A previous store may still hold a retired modal session.
+const defaultStoreKey = Symbol.for('@zxkit/noti/default-store/v4')
+const legacyStoreKey = Symbol.for('@zxkit/noti/default-store/v3')
 const originalStore = Reflect.get(globalThis, defaultStoreKey)
 
 afterEach(() => {

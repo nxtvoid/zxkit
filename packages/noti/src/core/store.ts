@@ -20,6 +20,7 @@ interface NotiStoreOptions {
 
 /** What the mounted outlet contributes to every call made while it is up. */
 interface NotiOutletDefaults {
+  stateOptions?: Partial<Record<import('../types').NotiState, Partial<NotiOptions>>>
   position: NotiPosition
   options: Partial<NotiOptions> | undefined
 }
@@ -217,13 +218,22 @@ export function createNotiStore(options: NotiStoreOptions = {}): NotiStore {
     const previous = state
     state = notiReducer(previous, command)
     if (state === previous) return
+    if (command.type === 'replace' && state.current !== null) {
+      state = notiReducer(state, {
+        type: 'set-paused',
+        instanceId: state.current.instanceId,
+        paused: holds.size > 0,
+      })
+    }
 
     const before = previous.current
     const after = state.current
 
     // Retires the displaced instance exactly once, before the new one takes over.
     if (before !== null && (after === null || after.instanceId !== before.instanceId)) {
-      fireDismiss(before, command.type === 'replace' ? 'replaced' : before.dismissReason)
+      if (before.id !== after?.id || command.type !== 'replace') {
+        fireDismiss(before, command.type === 'replace' ? 'replaced' : before.dismissReason)
+      }
     }
 
     if (after !== null && after.phase === 'exiting' && before?.phase !== 'exiting') {
@@ -328,9 +338,9 @@ export function createNotiStore(options: NotiStoreOptions = {}): NotiStore {
       clearExit()
       holds.clear()
       notified.clear()
-      listeners.clear()
       registrations.clear()
       state = initialNotiStoreState
+      listeners.clear()
     },
   }
 }

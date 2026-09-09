@@ -47,6 +47,7 @@ import {
 } from '../motion/swipe'
 import { NotiHeadingTransition } from './noti-heading-transition'
 import { NotiIslandCanvas } from './noti-island-canvas'
+import { waitForGeometry } from './wait-for-geometry'
 import {
   readNotiSpringDuration,
   useNotiContentHeight,
@@ -55,6 +56,7 @@ import {
 } from './use-noti-measure'
 
 interface NotiItemProps {
+  actionErrorLabel: string
   record: NotiRecord
   store: NotiStore
   /** Already resolved: the record's own position, or the outlet's. */
@@ -92,6 +94,7 @@ interface NotiView {
   description: NotiContent | undefined
   icon: NotiIcon | null | undefined
   button: NotiButton | undefined
+  cancelButton: NotiButton | undefined
   styles: NotiStyles | undefined
   fill: string
   roundness: number
@@ -108,6 +111,7 @@ function toView(record: NotiRecord): NotiView {
     description: record.description,
     icon: record.icon,
     button: record.button,
+    cancelButton: record.cancelButton,
     styles: record.styles,
     fill: record.fill,
     roundness: record.roundness,
@@ -163,6 +167,7 @@ function joinClassNames(...values: (string | undefined)[]): string | undefined {
  * its action nested inside is what no screen reader can untangle.
  */
 export function NotiItem({
+  actionErrorLabel,
   record,
   store,
   position,
@@ -204,12 +209,17 @@ export function NotiItem({
   const [axis, setAxis] = useState<NotiSwipeAxis | null>(null)
   const [view, setView] = useState<NotiView>(() => toView(record))
   const [pending, setPending] = useState<NotiView | null>(null)
+  const actionLock = useRef<number | null>(null)
+  const [busyAction, setBusyAction] = useState<number | null>(null)
   const [ready, setReady] = useState(false)
+  // Register an empty live region before inserting its first message.
+  const [contentReady, setContentReady] = useState(false)
   /** The expansion the user is looking at, read before this record landed. */
   const shownExpanded = useRef(record.expanded)
 
   const dragging = axis !== null
-  const expanded = record.expanded
+  const requestedExpanded =
+    record.expanded && (record.phase !== 'exiting' || thrown.current !== null)
   const align = alignOf(position)
   const edge = edgeOf(position)
 
@@ -217,17 +227,10 @@ export function NotiItem({
   // Treating those as content builds a body nobody can see and lets the island
   // open onto nothing.
   const hasDescription = isRenderable(view.description)
-  const hasButton = isNotiButton(view.button)
+  const hasButton = isNotiButton(view.button) || isNotiButton(view.cancelButton)
   const showClose = closeButton && record.dismissible
-  const hasDetails = hasDescription || hasButton
   // Opening now would reveal the content that is on its way out.
   const swapPending = pending !== null
-  // Loading never opens: nothing to reveal, and no known end. A close button
-  // counts, so focusing it opens the island the user is about to close.
-  // The close control is chrome, not content: growing an empty card just to
-  // show it is what left a blank island hanging off the pill.
-  const expandable = hasDetails && view.state !== 'loading'
-  const canExpand = expandable && !swapPending
 
   /* ------------------------------ Measurements ---------------------------- */
 
@@ -238,22 +241,89 @@ export function NotiItem({
   // Both fallbacks cover an animation whose length the token decides, so they
   // are derived from it rather than from the built-in duration.
   const refreshFallback = springDuration + FALLBACK_MARGIN
-  const exitFallback = motionToken('exit', reducedMotion, springDuration).duration + FALLBACK_MARGIN
+  const exitFallback =
+    (reducedMotion ? 0 : springDuration) +
+    motionToken('exit', reducedMotion, springDuration).duration +
+    FALLBACK_MARGIN
 
-  const measureKey = `${view.version}:${String(expanded)}:${compactHeight}:${String(showClose)}`
-  const measuredPill = useNotiPillWidth(
-    header,
-    heading,
-    compactHeight,
-    showClose ? CLOSE_SLOT : 0,
-    measureKey
-  )
+  const measureKey = `${view.version}:${String(requestedExpanded)}:${compactHeight}:${String(showClose)}:${String(contentReady)}`
+  const measuredPill = useNotiPillWidth(header, heading, compactHeight, 0, measureKey)
   // A zero reading would put a right-aligned pill off the end of the island.
-  const pillWidth = Math.min(islandWidth, Math.max(compactHeight, measuredPill))
+  // The close control moves into the card when expanded. Only the compact
+  // capsule carries its slot; both width and alignment follow the same spring.
+  const compactPillWidth = measuredPill + (showClose ? CLOSE_SLOT : 0)
+  const compactWidth = Math.min(islandWidth, Math.max(compactHeight, compactPillWidth))
+  const compactX =
+    align === 'right'
+      ? islandWidth - compactWidth
+      : align === 'center'
+        ? (islandWidth - compactWidth) / 2
+        : 0
+  const positioningKey = `${view.instanceId}:${compactWidth}:${compactX}:${edge}`
+  const [positioned, setPositioned] = useState<string | null>(null)
+  const expanded = requestedExpanded && (reducedMotion || positioned === positioningKey)
+
+  // A new heading first establishes its capsule. Opening while its width/x
+  // are still travelling makes a long title drag the card sideways.
+  useEffect(() => {
+    if (!requestedExpanded || swapPending || !contentReady) {
+      setPositioned(null)
+      return
+    }
+
+    const node = element.current
+    const pill = node?.querySelector('[data-noti-island-pill]')
+
+    if (
+      !node ||
+      !pill ||
+      reducedMotion ||
+      node.getBoundingClientRect().width === 0 ||
+      node.closest('[data-noti-unstyled]')
+    ) {
+      setPositioned(positioningKey)
+      return
+    }
+
+    return waitForGeometry(
+      () => {
+        const shape = getComputedStyle(pill)
+        return (
+          Math.abs(Number.parseFloat(shape.width) - compactWidth) <= 1 &&
+          Math.abs(Number.parseFloat(shape.getPropertyValue('x')) - compactX) <= 1 &&
+          Math.abs(node.getBoundingClientRect().width - node.offsetWidth) <= 1
+        )
+      },
+      () => setPositioned(positioningKey),
+      springDuration + FALLBACK_MARGIN,
+      2
+    )
+  }, [
+    requestedExpanded,
+    swapPending,
+    contentReady,
+    reducedMotion,
+    positioningKey,
+    compactWidth,
+    compactX,
+    springDuration,
+  ])
+
+  const pillWidth = Math.min(
+    islandWidth,
+    Math.max(compactHeight, expanded ? measuredPill : compactPillWidth)
+  )
   // The heading wants more room than the island has. Only ever read, never fed
   // back into the measurement, so it cannot oscillate.
-  const truncated = measuredPill > islandWidth
-  const bodyHeight = useNotiContentHeight(body, hasDescription, measureKey)
+  // Keep the full-title disclosure stable even if opening frees enough room
+  // for the heading: otherwise a title-only card loses its reason to stay open.
+  const truncated = compactPillWidth > islandWidth
+  const truncatedTitle = truncated
+  const hasDetails = hasDescription || hasButton || truncatedTitle
+  // Loading details and truncated titles are content; close chrome alone is not.
+  const expandable = hasDetails
+  const canExpand = expandable && !swapPending
+  const bodyHeight = useNotiContentHeight(body, hasDescription || truncatedTitle, measureKey)
   const actionsHeight = useNotiContentHeight(actions, hasButton, measureKey)
 
   const blur = view.roundness * BLUR_RATIO
@@ -266,6 +336,79 @@ export function NotiItem({
   const lastExpanded = useRef(rawExpanded)
   if (expanded) lastExpanded.current = rawExpanded
   const expandedHeight = expanded ? rawExpanded : lastExpanded.current
+
+  // Observe the actual opening, not a percentage of an assumed spring. Once
+  // readable, late content measurements must not hide the description again.
+  const revealKey = `${view.instanceId}`
+  const [revealed, setRevealed] = useState<string | null>(null)
+  const detailsVisible = expanded && !swapPending && (reducedMotion || revealed === revealKey)
+
+  useEffect(() => {
+    if (!expanded || swapPending || !contentReady) {
+      setRevealed(null)
+      return
+    }
+    if (!ready) return
+    if (reducedMotion) return
+    const node = element.current
+    if (node === null) return
+    const reveal = () => {
+      setRevealed(revealKey)
+    }
+
+    const onEnd = (event: TransitionEvent) => {
+      if (
+        event.target !== node ||
+        (event.propertyName !== 'block-size' && event.propertyName !== 'height')
+      )
+        return
+      cancelObservation()
+      reveal()
+    }
+
+    const pill = node.querySelector('[data-noti-island-pill]')
+    const targetX =
+      align === 'right'
+        ? islandWidth - pillWidth
+        : align === 'center'
+          ? (islandWidth - pillWidth) / 2
+          : 0
+
+    const cancelObservation = waitForGeometry(
+      () => {
+        if (!pill || node.offsetHeight === 0) return false
+        const shape = getComputedStyle(pill)
+        // Expansion may still have a tiny rebound, but no content is exposed
+        // outside the card and the heading is already at its final position.
+        return (
+          node.offsetHeight >= rawExpanded - 1 &&
+          Math.abs(Number.parseFloat(shape.width) - pillWidth) <= 2 &&
+          Math.abs(Number.parseFloat(shape.getPropertyValue('x')) - targetX) <= 2
+        )
+      },
+      reveal,
+      springDuration + FALLBACK_MARGIN
+    )
+
+    node.addEventListener('transitionend', onEnd)
+
+    return () => {
+      cancelObservation()
+      node.removeEventListener('transitionend', onEnd)
+    }
+  }, [
+    expanded,
+    swapPending,
+    ready,
+    contentReady,
+    reducedMotion,
+    revealKey,
+    springDuration,
+    rawExpanded,
+    pillWidth,
+    islandWidth,
+    align,
+  ])
 
   const pillX =
     align === 'right'
@@ -291,9 +434,12 @@ export function NotiItem({
 
   // One still frame first, so the island does not morph out of nothing.
   useEffect(() => {
+    setContentReady(true)
+
     const frame = requestAnimationFrame(() => {
       setReady(true)
     })
+
     return () => {
       cancelAnimationFrame(frame)
     }
@@ -322,7 +468,14 @@ export function NotiItem({
   // Refresh. An open island collapses before it changes what it says, so the
   // silhouette stays continuous instead of cutting from one card to another.
   useEffect(() => {
-    if (record.version === decided.current) return
+    if (record.version === decided.current) {
+      if (record.instanceId !== view.instanceId && pendingView.current === null) {
+        commitView(toView(record))
+      }
+
+      return
+    }
+
     decided.current = record.version
 
     const next = toView(record)
@@ -339,11 +492,22 @@ export function NotiItem({
     }
 
     queueView(next)
-  }, [record, reducedMotion])
+  }, [record, reducedMotion, view.instanceId])
+
+  // Removing a focused action does not reliably emit blur. Reconcile after the
+  // new content is committed, without releasing focus that remains in the island.
+  useEffect(() => {
+    const node = element.current
+    if (node === null || node.contains(node.ownerDocument.activeElement)) return
+    if (held.current.delete('focus')) {
+      interacting.current = held.current.has('hover')
+      store.resume('focus')
+    }
+  }, [view, store])
 
   // After the refresh effect on purpose, so it still sees the previous expansion.
   useEffect(() => {
-    shownExpanded.current = record.expanded
+    shownExpanded.current = expanded
   })
 
   useEffect(() => {
@@ -381,13 +545,13 @@ export function NotiItem({
     // On the way out: the phase is a dependency so the dismiss tears these
     // timers down instead of letting them reopen a card mid-exit.
     if (record.phase === 'exiting') return
-    // `expandable`, not `hasDetails`: the same gate hover and focus run through.
-    // A `loading` island has a description the card is never sized to show, so
-    // opening it here painted content over a silhouette still drawn compact.
-    //
-    // Hover and focus may still open an island whose only content is the close
-    // button. Autopilot may not: nobody asked, and there is nothing to read.
-    if (!expandable || !record.autopilot.enabled) return
+    // The same content gate is used for autopilot, hover, focus and touch.
+    if (!expandable) return
+    if (record.keepExpanded) {
+      store.dispatch({ type: 'expand', instanceId: view.instanceId, expanded: true })
+      return
+    }
+    if (!record.autopilot.enabled) return
 
     const open = setTimeout(() => {
       store.dispatch({ type: 'expand', instanceId: view.instanceId, expanded: true })
@@ -406,7 +570,15 @@ export function NotiItem({
       clearTimeout(open)
       if (close !== undefined) clearTimeout(close)
     }
-  }, [record.instanceId, record.phase, record.autopilot, view.instanceId, expandable, store])
+  }, [
+    record.instanceId,
+    record.phase,
+    record.autopilot,
+    record.keepExpanded,
+    view.instanceId,
+    expandable,
+    store,
+  ])
 
   // What ends a tap, since no pointer is going to leave. A press anywhere else
   // closes the island and hands the countdown back — otherwise a finger that
@@ -513,22 +685,38 @@ export function NotiItem({
           ? `translate3d(${throwTo.from}px, 0, 0)`
           : `translate3d(0, ${throwTo.from}px, 0)`
 
-    animateNoti(
-      node,
-      'transform',
-      reducedMotion
-        ? [{ opacity: 1 }, { opacity: 0 }]
-        : [
-            { opacity: 1, transform: at },
-            { opacity: 0, transform: away },
-          ],
-      motionToken(
-        throwTo === null ? 'exit' : 'swipeOut',
-        reducedMotion,
-        readNotiSpringDuration(node)
-      ),
-      remove
-    )
+    const finishExit = () =>
+      animateNoti(
+        node,
+        'transform',
+        reducedMotion
+          ? [{ opacity: 1 }, { opacity: 0 }]
+          : [
+              { opacity: 1, transform: at },
+              { opacity: 0, transform: away },
+            ],
+        motionToken(
+          throwTo === null ? 'exit' : 'swipeOut',
+          reducedMotion,
+          readNotiSpringDuration(node)
+        ),
+        remove
+      )
+    // Reverse the arrival: collapse the card before the compact pill leaves.
+    // No CSS/WAAPI support means there is no transition to wait for (e.g. SSR tests).
+    if (
+      record.expanded &&
+      throwTo === null &&
+      !reducedMotion &&
+      typeof node.animate === 'function'
+    ) {
+      cancelNotiAnimation(node, 'transform')
+      const timeout = setTimeout(finishExit, readNotiSpringDuration(node))
+      return () => {
+        clearTimeout(timeout)
+      }
+    }
+    finishExit()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record.phase, instanceId, store])
 
@@ -799,19 +987,18 @@ export function NotiItem({
     ['--noti-island-height' as string]: `${expanded ? expandedHeight : compactHeight}px`,
     ['--noti-pill-width' as string]: `${pillWidth}px`,
     ['--noti-pill-x' as string]: `${pillX}px`,
+    ['--noti-heading-reserve' as string]: `${showClose && !expanded ? CLOSE_SLOT : 12}px`,
     // Against the pill's trailing edge while compact, against the card's
     // corner once open. A fixed inset would strand it at the far edge of the
     // full-width box, well outside a right-aligned capsule.
     ['--noti-close-inset' as string]: expanded
       ? '8px'
       : `${Math.max(8, islandWidth - pillX - pillWidth + 8)}px`,
-    ['--noti-close-top' as string]: `${(expanded ? contentOffset : 0) + 8}px`,
+    ['--noti-close-top' as string]: `${(expanded ? contentOffset : 0) + 6}px`,
     // The pill's horizontal travel rides in the transform rather than in `left`:
     // same movement, without a layout pass on every frame of the morph.
-    ['--noti-heading-transform' as string]: expanded
-      ? `translate3d(${pillX}px, ${edge === 'bottom' ? 3 : -3}px, 0) scale(0.9)`
-      : `translate3d(${pillX}px, 0px, 0) scale(1)`,
-    ['--noti-content-opacity' as string]: expanded ? '1' : '0',
+    ['--noti-heading-transform' as string]: `translate3d(${pillX}px, 0px, 0)`,
+    ['--noti-content-opacity' as string]: detailsVisible ? '1' : '0',
     ['--noti-body-offset' as string]: `${contentOffset}px`,
     ['--noti-actions-offset' as string]: `${contentOffset + bodyHeight}px`,
   }
@@ -837,6 +1024,12 @@ export function NotiItem({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented || !record.dismissible) return
+        event.preventDefault()
+        event.stopPropagation()
+        dismiss('escape')
+      }}
       onPointerEnter={(event: PointerEvent<HTMLLIElement>) => {
         if (!isHoverPointer(event)) return
 
@@ -899,39 +1092,70 @@ export function NotiItem({
         data-noti-content=''
         className={classNames?.content}
       >
-        <div ref={header} data-noti-header='' data-noti-edge={edge}>
-          <NotiHeadingTransition
-            ref={heading}
-            state={view.state}
-            title={view.title}
-            icon={view.icon}
-            reducedMotion={reducedMotion}
-            icons={icons}
-            classNames={classNames}
-            styles={view.styles}
-          />
-        </div>
-
-        {hasDescription && (
-          <div ref={body} data-noti-body='' data-noti-visible={expanded ? '' : undefined}>
-            <div
-              data-noti-description=''
-              className={joinClassNames(classNames?.description, view.styles?.description)}
-            >
-              {view.description}
+        {contentReady && (
+          <>
+            <div ref={header} data-noti-header='' data-noti-edge={edge}>
+              <NotiHeadingTransition
+                ref={heading}
+                state={view.state}
+                title={view.title}
+                icon={view.icon}
+                reducedMotion={reducedMotion}
+                icons={icons}
+                classNames={classNames}
+                styles={view.styles}
+              />
             </div>
-          </div>
+
+            {(hasDescription || truncatedTitle) && (
+              <div ref={body} data-noti-body='' data-noti-visible={detailsVisible ? '' : undefined}>
+                <div
+                  data-noti-description=''
+                  className={joinClassNames(classNames?.description, view.styles?.description)}
+                >
+                  {truncatedTitle && (
+                    <div data-noti-full-title='' aria-hidden='true'>
+                      {view.title}
+                    </div>
+                  )}
+                  {view.description}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {hasButton && view.button !== undefined && (
+      {hasButton && (
         <div
           ref={actions}
           data-noti-actions=''
-          data-noti-visible={expanded ? '' : undefined}
+          data-noti-visible={detailsVisible ? '' : undefined}
           className={classNames?.actions}
         >
-          <NotiActionButton button={view.button} className={buttonClassName} />
+          {(['cancel', 'primary'] as const).map((slot) => {
+            const button = slot === 'cancel' ? view.cancelButton : view.button
+            if (!isNotiButton(button)) return null
+            return (
+              <NotiActionButton
+                key={`${view.instanceId}:${slot}`}
+                slot={slot}
+                actionLock={actionLock}
+                locked={busyAction === view.instanceId}
+                onBusyChange={(busy) =>
+                  setBusyAction((current) =>
+                    busy ? view.instanceId : current === view.instanceId ? null : current
+                  )
+                }
+                instanceId={view.instanceId}
+                store={store}
+                stale={view.instanceId !== instanceId || record.phase === 'exiting'}
+                errorLabel={actionErrorLabel}
+                button={button}
+                className={buttonClassName}
+              />
+            )
+          })}
         </div>
       )}
 
@@ -955,42 +1179,125 @@ export function NotiItem({
 }
 
 interface NotiActionButtonProps {
+  slot: 'cancel' | 'primary'
+  actionLock: { current: number | null }
+  locked: boolean
+  onBusyChange: (busy: boolean) => void
+  instanceId: number
+  store: NotiStore
+  stale: boolean
+  errorLabel: string
   button: NotiButton
   className: string | undefined
 }
 
 /**
- * The island's single button. It never closes the notification: a button that
- * dismisses what it acts on takes away the confirmation just earned.
+ * The island's action. It pauses expiry while pending or failed, and only
+ * dismisses its own invocation when explicitly configured to do so.
  *
  * It stays in the tab order while the island is compact — focusing it is what
  * opens the island — because a control only a hover can reach is a control the
  * keyboard cannot find.
  */
-function NotiActionButton({ button, className }: NotiActionButtonProps) {
-  return (
-    <button
-      type='button'
-      data-noti-button=''
-      className={className}
-      aria-label={button.accessibleLabel}
-      onClick={(event) => {
-        // A failure keeps the notification up rather than hiding what broke —
-        // whether it throws straight away or rejects later, and whether the
-        // handler returns a real `Promise` or any other thenable.
-        try {
-          const result = button.onClick(event)
-          if (result === undefined || result === null) return
+function NotiActionButton({
+  slot,
+  actionLock,
+  locked,
+  onBusyChange,
+  button,
+  className,
+  instanceId,
+  store,
+  stale,
+  errorLabel,
+}: NotiActionButtonProps) {
+  const [pending, setPending] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const busy = useRef(false)
+  const mounted = useRef(true)
+  const reason: PauseReason =
+    slot === 'cancel' ? `action:${instanceId}:cancel` : `action:${instanceId}`
 
-          void Promise.resolve(result).catch((error: unknown) => {
+  useEffect(() => {
+    mounted.current = true
+
+    return () => {
+      mounted.current = false
+      store.resume(reason)
+    }
+  }, [store, reason])
+
+  return (
+    <>
+      <button
+        type='button'
+        data-noti-button=''
+        data-noti-secondary={slot === 'cancel' ? '' : undefined}
+        className={className}
+        aria-label={button.accessibleLabel}
+        aria-busy={pending || undefined}
+        disabled={stale || button.disabled}
+        aria-disabled={pending || locked || stale || button.disabled || undefined}
+        onClick={async (event) => {
+          const current = store.getCurrent()
+
+          if (
+            busy.current ||
+            actionLock.current === instanceId ||
+            stale ||
+            button.disabled ||
+            current?.instanceId !== instanceId ||
+            current.phase === 'exiting'
+          ) {
+            return
+          }
+
+          busy.current = true
+          actionLock.current = instanceId
+          onBusyChange(true)
+          setFailed(false)
+          store.pause(reason)
+          let succeeded = false
+          // A failure keeps the notification up rather than hiding what broke —
+          // whether it throws straight away or rejects later, and whether the
+          // handler returns a real `Promise` or any other thenable.
+          try {
+            const result = button.onClick(event)
+
+            if (result !== undefined && result !== null) {
+              setPending(true)
+              await result
+            }
+
+            if (button.dismissOnSuccess) {
+              store.dispatch({ type: 'dismiss', instanceId, reason: 'api' })
+            }
+
+            succeeded = true
+          } catch (error) {
             console.error('[noti] button handler failed', error)
-          })
-        } catch (error) {
-          console.error('[noti] button handler failed', error)
-        }
-      }}
-    >
-      {button.title}
-    </button>
+            if (mounted.current) setFailed(true)
+          } finally {
+            busy.current = false
+
+            if (actionLock.current === instanceId) {
+              actionLock.current = null
+              if (mounted.current) onBusyChange(false)
+            }
+
+            if (succeeded || !mounted.current) store.resume(reason)
+            if (mounted.current) setPending(false)
+          }
+        }}
+      >
+        {pending ? (button.pendingTitle ?? button.title) : button.title}
+      </button>
+
+      {failed && (
+        <div role='status' data-noti-action-error=''>
+          {button.errorTitle ?? errorLabel}
+        </div>
+      )}
+    </>
   )
 }
