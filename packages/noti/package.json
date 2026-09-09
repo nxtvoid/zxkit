@@ -1,6 +1,6 @@
 {
   "name": "@zxkit/noti",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "One notification, one island: a React singleton with an object-only API, physical pill-to-card motion and no animation dependency",
   "author": "nxtvoid",
   "license": "MIT",
