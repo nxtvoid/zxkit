@@ -136,7 +136,17 @@ export interface NotiApi {
   clear: (position?: NotiPosition) => void
 }
 
-export function createNotiApi(store: NotiStore): NotiApi {
+/** Internal ownership for a component-bound API. It never subscribes to the store. */
+export interface NotiScope {
+  active: boolean
+  id: NotiId | null
+}
+
+export function createNotiApi(store: NotiStore, scope?: NotiScope): NotiApi {
+  function canAccess(record: NotiRecord): boolean {
+    return scope === undefined || (scope.active && scope.id === record.id)
+  }
+
   function build(state: NotiState, options: NotiOptions): NotiRecord {
     const previous = store.getCurrent()
     const outletDefaults = store.getDefaults()
@@ -200,6 +210,10 @@ export function createNotiApi(store: NotiStore): NotiApi {
     const record = build(state, options)
     const current = store.getCurrent()
 
+    // Retained callbacks may run after their component leaves. Keep the return
+    // contract, but do not let those calls put an orphan back on screen.
+    if (scope !== undefined && !scope.active) return record
+
     if (
       !ownsSlot &&
       current !== null &&
@@ -209,6 +223,9 @@ export function createNotiApi(store: NotiStore): NotiApi {
       return record
     }
 
+    // Record ownership before dispatch: onDismiss and subscribers can call
+    // back into this API synchronously and replace this invocation again.
+    if (scope !== undefined) scope.id = record.id
     store.dispatch({ type: 'replace', record })
 
     return record
@@ -239,7 +256,10 @@ export function createNotiApi(store: NotiStore): NotiApi {
     function owns(): boolean {
       const current = store.getCurrent()
       return (
-        current !== null && current.instanceId === loading.instanceId && current.phase !== 'exiting'
+        current !== null &&
+        canAccess(current) &&
+        current.instanceId === loading.instanceId &&
+        current.phase !== 'exiting'
       )
     }
 
@@ -310,7 +330,13 @@ export function createNotiApi(store: NotiStore): NotiApi {
       assertOptions('update', options)
       const current = store.getCurrent()
 
-      if (current === null || current.id !== id || current.phase === 'exiting') return false
+      if (
+        current === null ||
+        !canAccess(current) ||
+        current.id !== id ||
+        current.phase === 'exiting'
+      )
+        return false
 
       const updated: NotiOptions = {
         ...current,
@@ -347,7 +373,7 @@ export function createNotiApi(store: NotiStore): NotiApi {
     promise,
     dismiss: (id) => {
       const current = store.getCurrent()
-      if (current === null) return
+      if (current === null || !canAccess(current)) return
 
       // There is one id, but a caller that names another one means a different
       // notification — and closing the live one instead would be a surprise.
@@ -357,7 +383,7 @@ export function createNotiApi(store: NotiStore): NotiApi {
     },
     clear: (position) => {
       const current = store.getCurrent()
-      if (current === null) return
+      if (current === null || !canAccess(current)) return
 
       // A position filter only clears the notification actually sitting there.
       if (position !== undefined && (current.position ?? store.getDefaults().position) !== position)

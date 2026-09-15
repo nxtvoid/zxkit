@@ -64,6 +64,67 @@ noti.success('Saved') // ✗ TypeError
 noti.error('Failed', { duration: 4000 }) // ✗ TypeError
 ```
 
+## Component-owned notifications
+
+Use `useNoti()` for notifications that belong to a component.
+It returns a stable API with the same methods as the global `noti`, and closes its
+live notification automatically when the component unmounts. Keep the same
+`<NotiOutlet />` in your layout.
+
+```tsx
+'use client'
+
+import { useNoti } from '@zxkit/noti'
+
+export function NotificationDemo() {
+  const noti = useNoti()
+
+  return (
+    <button
+      onClick={() => {
+        noti.info({
+          title: 'A notification for this view',
+          duration: null,
+        })
+      }}
+    >
+      Show notification
+    </button>
+  )
+}
+```
+
+### Choosing a lifetime
+
+| API                      | Lifetime                                    |
+| ------------------------ | ------------------------------------------- |
+| `import { noti }`        | Independent of the component that calls it. |
+| `const noti = useNoti()` | Bound to the component that calls the hook. |
+
+Both APIs share the same outlet and the same single notification. A hook does not
+create a separate stack or change replacement priorities.
+
+### Ownership and asynchronous work
+
+- Each hook owns only the notifications it creates. Unmounting it leaves a
+  replacement from another hook or the global API alone.
+- `update`, `dismiss` and `clear` on the hook's API only affect its own live
+  notification, including when `dismiss()` or `clear()` is called without arguments.
+- Ownership follows `promise()` from loading to its outcome. Unmounting closes
+  either state; a late outcome cannot bring it back.
+- Calls through a retained hook API after unmount do not display notifications.
+  They do not cancel work: `promise()` still runs the supplied operation, returns
+  its original promise, and runs message resolvers and `finally` as usual.
+- This follows the component's effect lifecycle, not the URL. React's effect
+  cleanup also retires the scope when an Activity hides it; setup enables it again
+  without restoring the dismissed notification. A persistent layout that stays
+  active across navigation keeps its notifications. See React's
+  [effect lifecycle](https://react.dev/reference/react/useEffect).
+
+Use the module-level `noti` for notifications that should survive their originating
+component, such as a save result shown after navigating away. No provider or router
+integration is required for `useNoti()`.
+
 ## Methods
 
 | Call                       | Meaning                                                      |
