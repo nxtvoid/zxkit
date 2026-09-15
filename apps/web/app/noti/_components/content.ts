@@ -27,6 +27,36 @@ export async function saveDraft(draft: Draft) {
   noti.success({ title: 'Draft saved' })
 }`
 
+export const scopedExample = `'use client'
+
+import { useNoti } from '@zxkit/noti'
+
+export function NotificationDemo() {
+  const noti = useNoti()
+
+  return (
+    <button
+      onClick={() => {
+        noti.info({
+          title: 'A notification for this view',
+          duration: null,
+        })
+      }}
+    >
+      Show notification
+    </button>
+  )
+}
+
+// The same NotiOutlet renders it. No extra provider or manual cleanup.
+// update(), dismiss() and clear() affect only this hook's live notification.
+// promise() keeps that ownership from loading to its outcome. Unmounting
+// closes the notification without cancelling the underlying operation.
+// A late result cannot bring the dismissed notification back.
+
+// Use the module-level noti when a notification should survive its component.
+// A component that stays active across navigation keeps its notifications.`
+
 export const singletonExample = `noti.success({ title: 'Changes saved' })
 noti.error({ title: 'Could not save' })   // replaces it — same node, same island
 

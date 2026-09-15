@@ -1,6 +1,7 @@
 import { CodeBlock } from '@zxkit/ui/code-block'
 import { CopyButton } from '@zxkit/ui/copy-button'
 import { NotiPlayground } from './noti-playground'
+import { NotiLifecycleDemo } from './noti-lifecycle-demo'
 import {
   accessibilityExample,
   buttonExample,
@@ -11,6 +12,7 @@ import {
   optionsExample,
   outletMountExample,
   promiseExample,
+  scopedExample,
   singletonExample,
   stylingExample,
   timerExample,
@@ -52,6 +54,14 @@ const groups: Group[] = [
         description:
           'Callable from anywhere — an event handler, a server action wrapper, a websocket callback. Every method takes an options object; there is no string form to fall back to.',
         code: imperativeExample,
+      },
+      {
+        id: 'component-lifetime',
+        label: 'Component lifetime',
+        title: 'useNoti()',
+        description:
+          'The same methods in a stable API bound to your component. Its live notification closes automatically on unmount. Replacements from other hooks or the global API remain visible; all calls share the same island and replacement priorities.',
+        code: scopedExample,
       },
     ],
   },
@@ -212,6 +222,8 @@ export function NotiView() {
           <NotiPlayground />
         </div>
       </section>
+
+      <NotiLifecycleDemo />
 
       {groups.map((group) => (
         <section key={group.id} id={group.id} className='mt-16 scroll-mt-24'>
