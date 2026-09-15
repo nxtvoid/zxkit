@@ -738,10 +738,10 @@ describe('noti', () => {
 })
 
 describe('public surface', () => {
-  it('exports the API, the outlet and the supported types only', async () => {
+  it('exports the API, the outlet, the scoped hook and the supported types only', async () => {
     const surface = await import('./index')
 
-    expect(Object.keys(surface).toSorted()).toEqual(['NotiOutlet', 'noti'])
+    expect(Object.keys(surface).toSorted()).toEqual(['NotiOutlet', 'noti', 'useNoti'])
   })
 
   it('no longer exposes the store, the item or a records hook', async () => {

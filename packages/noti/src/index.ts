@@ -1,4 +1,5 @@
 export { noti, type NotiApi } from './client'
+export { useNoti } from './react/use-noti'
 
 export { NotiOutlet, type NotiOffset, type NotiOutletProps } from './react/noti-outlet'
 
